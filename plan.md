@@ -6,7 +6,7 @@ player's chosen instrument; group songs into setlists; and generate printable
 multi-page PDF songbooks/handouts.
 
 Sibling to [ttn-list](https://github.com/timtomnow/ttn-list); it deliberately
-reuses that app's stack, conventions, and **ttn-backup** integration so both
+reuses that app's stack, conventions and **ttn-backup** integration so both
 live under the same domain and back up the same way.
 
 ---
