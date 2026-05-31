@@ -27,7 +27,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { TagInput } from '@/components/inputs/TagInput';
 import { ChordLine } from '@/components/chords/ChordLine';
-import { deleteSong, updateSong, useSong } from '@/db/repo';
+import { RhythmPatternEditor } from '@/components/rhythm/RhythmPatternEditor';
+import { deleteSong, updateSong, useRhythmPatterns, useSong } from '@/db/repo';
 import { newId } from '@/lib/id';
 import {
   SECTION_KINDS,
@@ -47,6 +48,7 @@ type EditSection = {
   label?: string;
   body: string;
   repeat?: number;
+  rhythmPatternId?: string;
 };
 
 function toEdit(sections: Section[]): EditSection[] {
@@ -56,6 +58,7 @@ function toEdit(sections: Section[]): EditSection[] {
     label: s.label,
     body: serializeLines(s.lines),
     repeat: s.repeat,
+    rhythmPatternId: s.rhythmPatternId,
   }));
 }
 
@@ -66,6 +69,7 @@ function fromEdit(sections: EditSection[]): Section[] {
     label: s.label,
     lines: parseLines(s.body),
     repeat: s.repeat,
+    rhythmPatternId: s.rhythmPatternId,
   }));
 }
 
@@ -287,11 +291,16 @@ function SortableSection({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const patterns = useRhythmPatterns();
+  const [newPatternOpen, setNewPatternOpen] = useState(false);
   const lines = useMemo(() => parseLines(section.body), [section.body]);
+
+  // Special sentinel value the rhythm select uses to trigger inline creation.
+  const CREATE = '__create__';
 
   return (
     <section ref={setNodeRef} style={style} className="card overflow-hidden">
-      <header className="flex items-center gap-2 border-b border-ink-200 bg-ink-50 px-3 py-2 dark:border-ink-800 dark:bg-ink-950/40">
+      <header className="flex flex-wrap items-center gap-2 border-b border-ink-200 bg-ink-50 px-3 py-2 dark:border-ink-800 dark:bg-ink-950/40">
         <button
           className="cursor-grab touch-none text-ink-400 active:cursor-grabbing"
           {...attributes}
@@ -312,11 +321,28 @@ function SortableSection({
           ))}
         </select>
         <input
-          className="input h-8 flex-1 py-0 text-sm"
+          className="input h-8 min-w-[6rem] flex-1 py-0 text-sm"
           placeholder={`${defaultLabelForKind(section.kind)} label (optional)`}
           value={section.label ?? ''}
           onChange={(e) => onChange({ label: e.target.value || undefined })}
         />
+        <select
+          className="input h-8 w-auto py-0 text-sm"
+          value={section.rhythmPatternId ?? ''}
+          title="Rhythm pattern"
+          onChange={(e) => {
+            if (e.target.value === CREATE) setNewPatternOpen(true);
+            else onChange({ rhythmPatternId: e.target.value || undefined });
+          }}
+        >
+          <option value="">No rhythm</option>
+          {patterns?.map((p) => (
+            <option key={p.id} value={p.id}>
+              ♪ {p.name}
+            </option>
+          ))}
+          <option value={CREATE}>+ New pattern…</option>
+        </select>
         <button className="btn-ghost p-1.5 text-red-600" onClick={onRemove} aria-label="Remove section">
           <Trash2 size={15} />
         </button>
@@ -340,6 +366,14 @@ function SortableSection({
           </div>
         )}
       </div>
+
+      {newPatternOpen && (
+        <RhythmPatternEditor
+          open
+          onClose={() => setNewPatternOpen(false)}
+          onSaved={(id) => onChange({ rhythmPatternId: id })}
+        />
+      )}
     </section>
   );
 }

@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Minus, Pencil, Play, Plus } from 'lucide-react';
-import { useSong } from '@/db/repo';
+import { useRhythmPatternsByIds, useSong } from '@/db/repo';
 import { ChordLine } from '@/components/chords/ChordLine';
 import { ChordChart } from '@/components/chords/ChordChart';
 import { ChordPopover } from '@/components/chords/ChordPopover';
 import { useChartResolver } from '@/components/chords/useChartResolver';
+import { RhythmChart } from '@/components/rhythm/RhythmChart';
 import { defaultLabelForKind } from '@/lib/chordpro';
 import { preferFlatsForKey, transposeChordSymbol } from '@/lib/music';
 import { uniqueChords } from '@/lib/song';
@@ -43,6 +44,13 @@ function View({ song }: { song: Song }) {
     () => uniqueChords(song.sections, transpose, flats),
     [song.sections, transpose, flats],
   );
+
+  const patternIds = useMemo(
+    () =>
+      song.sections.map((s) => s.rhythmPatternId).filter((id): id is string => Boolean(id)),
+    [song.sections],
+  );
+  const patterns = useRhythmPatternsByIds(patternIds);
 
   const shownKey = song.key
     ? transposeChordSymbol(song.key, transpose, flats)
@@ -126,24 +134,34 @@ function View({ song }: { song: Song }) {
 
       {/* Body */}
       <div className="space-y-6">
-        {song.sections.map((section) => (
-          <section key={section.id}>
-            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-accent">
-              {section.label || defaultLabelForKind(section.kind)}
-            </h3>
-            <div className="space-y-2">
-              {section.lines.map((line) => (
-                <ChordLine
-                  key={line.id}
-                  line={line}
-                  transpose={transpose}
-                  preferFlats={flats}
-                  onChordClick={(chord, anchor) => setPopover({ chord, anchor })}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
+        {song.sections.map((section) => {
+          const pattern = section.rhythmPatternId
+            ? patterns?.get(section.rhythmPatternId)
+            : undefined;
+          return (
+            <section key={section.id}>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-accent">
+                {section.label || defaultLabelForKind(section.kind)}
+              </h3>
+              {pattern && (
+                <div className="mb-3 overflow-x-auto">
+                  <RhythmChart pattern={pattern} size="sm" />
+                </div>
+              )}
+              <div className="space-y-2">
+                {section.lines.map((line) => (
+                  <ChordLine
+                    key={line.id}
+                    line={line}
+                    transpose={transpose}
+                    preferFlats={flats}
+                    onChordClick={(chord, anchor) => setPopover({ chord, anchor })}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
 
       {popover && (

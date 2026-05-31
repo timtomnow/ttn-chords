@@ -162,9 +162,24 @@ CRUD; Settings (theme, accent, backup). Placeholder pages for Setlists/Reports.
   deleted-song slot with a skip option.
 - `useSongsByIds` repo hook for batch song lookup.
 
-### Phase 7 — Rhythm patterns
-- Strum-pattern editor on a beat grid (`stepsPerBeat`), stroke per cell.
-- Render patterns (down/up/mute/accent) and attach to sections; show in read view.
+### Phase 7 — Rhythm patterns ✅
+- **Custom model** — strum direction (down/up/mute/accent) has no standard in
+  ChordPro or other lightweight formats (ChordPro's `{sog}` grid carries
+  bars/beats/chords but no strum direction). So this is built from scratch on
+  the `RhythmPattern` grid type, kept a strict subset of future per-string
+  notation. (A ChordPro grid import bridge is parked for later — see §6.)
+- `lib/rhythm.ts`: grid helpers (`makeSteps`, `resizeSteps`, `cycleStroke`,
+  stroke metadata) + tests (`rhythm.test.ts`).
+- `RhythmPatternEditor`: tap-to-cycle grid editor with adjustable meter +
+  subdivision (quarter/eighth/triplet/sixteenth) and a live preview.
+- `RhythmChart`: compact, self-contained **placeable box** (stroke glyphs over a
+  beat ruler, bar/beat lines, label) — the reusable unit for the read view,
+  performance views, and (Phase 8) drag-drop onto reports.
+- Library managed in Settings (`RhythmSettings`). Patterns attach to song
+  sections (select in the editor header, with inline "+ New pattern…"). Shown
+  per section in `SongView` and the Scroll performance view.
+- `useRhythmPatterns` / `useRhythmPattern` / `useRhythmPatternsByIds` + CRUD in
+  `db/repo.ts`.
 
 ### Phase 8 — Report generator (PDF) — multi-page required
 - Page-oriented editor: pages → blocks (song, chordChart, image, logo, rhythm,
@@ -223,6 +238,8 @@ subset of a future full-notation model (add `duration` later — additive only).
   cross-screen scroll, fixed-line teleprompter (N lines at a time, alignment
   options), two-column, auto-scroll that follows the beat-timing layer instead
   of a flat px/sec rate.
+- ChordPro grid (`{start_of_grid}`/`{sog}`) import bridge → map bars/beats/
+  chords onto the beat-timing layer (independent of strum patterns, Phase 7).
 - Audio playback / click track off the timing layer? (future)
 - Chord-chart auto-generation from a chord symbol when no diagram exists
   (already done for bass/piano via computed shapes; consider for guitar/uke).

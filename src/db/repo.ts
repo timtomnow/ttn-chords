@@ -8,6 +8,7 @@ import type {
   AppSettings,
   ChordDefinition,
   Instrument,
+  RhythmPattern,
   Setlist,
   Song,
 } from '@/types';
@@ -168,6 +169,52 @@ export async function saveChordDefinition(
 
 export async function deleteChordDefinition(id: string): Promise<void> {
   await db.chordDefinitions.delete(id);
+}
+
+// ───────── Rhythm patterns (reusable strum grids) ─────────
+
+export function useRhythmPatterns(): RhythmPattern[] | undefined {
+  return useLiveQuery(() => db.rhythmPatterns.orderBy('name').toArray());
+}
+
+export function useRhythmPattern(id: string | undefined): RhythmPattern | null | undefined {
+  return useLiveQuery(
+    async () => (id ? ((await db.rhythmPatterns.get(id)) ?? null) : null),
+    [id],
+  );
+}
+
+/** Look up many patterns by id, returned as a Map for O(1) access. */
+export function useRhythmPatternsByIds(
+  ids: string[],
+): Map<string, RhythmPattern> | undefined {
+  const key = ids.join(',');
+  return useLiveQuery(async () => {
+    const rows = await db.rhythmPatterns.bulkGet(ids);
+    const map = new Map<string, RhythmPattern>();
+    rows.forEach((r) => {
+      if (r) map.set(r.id, r);
+    });
+    return map;
+  }, [key]);
+}
+
+export async function createRhythmPattern(
+  data: Omit<RhythmPattern, 'createdAt' | 'updatedAt'>,
+): Promise<string> {
+  await db.rhythmPatterns.add({ ...data, createdAt: now(), updatedAt: now() });
+  return data.id;
+}
+
+export async function updateRhythmPattern(
+  id: string,
+  patch: Partial<RhythmPattern>,
+): Promise<void> {
+  await db.rhythmPatterns.update(id, { ...patch, updatedAt: now() });
+}
+
+export async function deleteRhythmPattern(id: string): Promise<void> {
+  await db.rhythmPatterns.delete(id);
 }
 
 // ───────── Settings (singleton) ─────────

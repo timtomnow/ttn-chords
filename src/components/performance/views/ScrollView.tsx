@@ -3,9 +3,11 @@
 // is fine-tuned by the shell's speed control. Registers itself with the
 // performance-view registry.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ScrollText } from 'lucide-react';
 import { ChordLine } from '@/components/chords/ChordLine';
+import { RhythmChart } from '@/components/rhythm/RhythmChart';
+import { useRhythmPatternsByIds } from '@/db/repo';
 import { defaultLabelForKind } from '@/lib/chordpro';
 import { registerView } from '@/lib/performance/registry';
 import type { PerformanceViewProps } from '@/lib/performance/types';
@@ -23,6 +25,12 @@ function ScrollView({
   const rafRef = useRef<number | null>(null);
   const accRef = useRef(0); // sub-pixel scroll accumulator
   const lastTsRef = useRef<number | null>(null);
+
+  const patternIds = useMemo(
+    () => song.sections.map((s) => s.rhythmPatternId).filter((id): id is string => Boolean(id)),
+    [song.sections],
+  );
+  const patterns = useRhythmPatternsByIds(patternIds);
 
   // Base auto-scroll rate: derive a gentle px/sec from tempo (faster songs
   // scroll a bit faster), then scale by the shell speed control. Tempo-less
@@ -73,24 +81,34 @@ function ScrollView({
       style={{ fontSize: `${fontScale}rem` }}
     >
       <div className="mx-auto max-w-3xl space-y-8 pb-[60vh]">
-        {song.sections.map((section) => (
-          <section key={section.id}>
-            <h3 className="mb-2 text-[0.7em] font-semibold uppercase tracking-wide text-accent">
-              {section.label || defaultLabelForKind(section.kind)}
-            </h3>
-            <div className="space-y-2">
-              {section.lines.map((line) => (
-                <ChordLine
-                  key={line.id}
-                  line={line}
-                  transpose={transpose}
-                  preferFlats={preferFlats}
-                  onChordClick={onChordClick}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
+        {song.sections.map((section) => {
+          const pattern = section.rhythmPatternId
+            ? patterns?.get(section.rhythmPatternId)
+            : undefined;
+          return (
+            <section key={section.id}>
+              <h3 className="mb-2 text-[0.7em] font-semibold uppercase tracking-wide text-accent">
+                {section.label || defaultLabelForKind(section.kind)}
+              </h3>
+              {pattern && (
+                <div className="mb-3 overflow-x-auto">
+                  <RhythmChart pattern={pattern} size="sm" />
+                </div>
+              )}
+              <div className="space-y-2">
+                {section.lines.map((line) => (
+                  <ChordLine
+                    key={line.id}
+                    line={line}
+                    transpose={transpose}
+                    preferFlats={preferFlats}
+                    onChordClick={onChordClick}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );

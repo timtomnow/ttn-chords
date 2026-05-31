@@ -12,6 +12,7 @@ import {
 } from '@/db/exportImport';
 import { openTtnBackupRestore } from '@/lib/ttnBackup';
 import { InstrumentSettings } from './settings/InstrumentSettings';
+import { RhythmSettings } from './settings/RhythmSettings';
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -91,6 +92,9 @@ export function Settings() {
 
       {/* Instrument & chords */}
       <InstrumentSettings />
+
+      {/* Rhythm patterns */}
+      <RhythmSettings />
 
       {/* Backup */}
       <section className="space-y-3">
