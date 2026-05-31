@@ -265,17 +265,46 @@ export type ChordDefinition = {
 // ─────────────────────────────────────────────────────────────────────────
 
 export type PageSize = 'letter' | 'a4' | 'legal';
+export type Orientation = 'portrait' | 'landscape';
 
 /**
- * A report = an arrangement of songs, chord charts, images/logos, and rhythm
- * patterns laid out across one or more pages. Multi-page layout support is a
- * hard requirement (see plan.md), so the model is page-oriented. The concrete
- * block schema is finalized in Phase 8; kept intentionally open here.
+ * Block types the report generator can place on a page. Each type is backed by
+ * a self-registering module in src/lib/report/blocks/ (block→component
+ * registry, mirroring the Phase-5 performance-view registry). Adding a type =
+ * a new module + this union entry.
+ */
+export type ReportBlockType =
+  | 'song'
+  | 'text'
+  | 'image'
+  | 'chordChart'
+  | 'rhythm'
+  | 'spacer';
+
+/**
+ * Where a block sits on its page — the two-tier model (see plan.md §Phase 8):
+ *   - `flow`: stacks in the page's vertical column (array order = stacking
+ *     order) and reflows; long flow content spills onto a continuation sheet.
+ *   - `floating`: free placement. `x`/`y`/`w`/`h` are PERCENTAGES of the page's
+ *     content box (0–100), so positions are resolution-independent and stay
+ *     anchored to the nominal sheet even when flow content spills.
+ */
+export type BlockPlacement =
+  | { mode: 'flow' }
+  | { mode: 'floating'; x: number; y: number; w: number; h?: number };
+
+/**
+ * A report = an arrangement of songs, chord charts, images/logos, rhythm
+ * patterns and text laid out across one or more pages. Multi-page layout is a
+ * hard requirement (see plan.md), so the model is page-oriented. `config` is
+ * intentionally loose — each block module owns and validates its own shape, so
+ * new block types never touch this file beyond the union above.
  */
 export type ReportBlock = {
   id: string;
-  type: 'song' | 'chordChart' | 'image' | 'logo' | 'rhythm' | 'text' | 'spacer';
-  /** Free-form, block-type-specific config resolved at render time. */
+  type: ReportBlockType;
+  placement: BlockPlacement;
+  /** Block-type-specific config; resolved at render time by the block module. */
   config: Record<string, unknown>;
 };
 
@@ -284,11 +313,34 @@ export type ReportPage = {
   blocks: ReportBlock[];
 };
 
+/**
+ * One header/footer band: three independent slots. Each slot supports the
+ * tokens {page} {pages} {title} {date}, expanded at render time.
+ */
+export type ReportBand = {
+  left?: string;
+  center?: string;
+  right?: string;
+};
+
+/**
+ * Template-level header/footer config. When `firstPageDifferent` is set, page 1
+ * uses `firstHeader`/`firstFooter` (either may be blank for a clean cover).
+ */
+export type ReportChrome = {
+  header?: ReportBand;
+  footer?: ReportBand;
+  firstPageDifferent?: boolean;
+  firstHeader?: ReportBand;
+  firstFooter?: ReportBand;
+};
+
 export type ReportTemplate = {
   id: string;
   name: string;
   pageSize: PageSize;
-  orientation: 'portrait' | 'landscape';
+  orientation: Orientation;
+  chrome?: ReportChrome;
   pages: ReportPage[];
   createdAt: number;
   updatedAt: number;

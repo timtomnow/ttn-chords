@@ -8,6 +8,8 @@ import type {
   AppSettings,
   ChordDefinition,
   Instrument,
+  Photo,
+  ReportTemplate,
   RhythmPattern,
   RhythmSymbol,
   Setlist,
@@ -253,6 +255,75 @@ export async function updateRhythmSymbol(
 
 export async function deleteRhythmSymbol(id: string): Promise<void> {
   await db.rhythmSymbols.delete(id);
+}
+
+// ───────── Report templates (Phase 8 — PDF generator) ─────────
+
+export function useReportTemplates(): ReportTemplate[] | undefined {
+  return useLiveQuery(() => db.reportTemplates.orderBy('updatedAt').reverse().toArray());
+}
+
+export function useReportTemplate(
+  id: string | undefined,
+): ReportTemplate | null | undefined {
+  return useLiveQuery(
+    async () => (id ? ((await db.reportTemplates.get(id)) ?? null) : null),
+    [id],
+  );
+}
+
+export async function createReportTemplate(
+  data: Partial<ReportTemplate> & Pick<ReportTemplate, 'name'>,
+): Promise<string> {
+  const id = newId();
+  const template: ReportTemplate = {
+    id,
+    name: data.name,
+    pageSize: data.pageSize ?? 'letter',
+    orientation: data.orientation ?? 'portrait',
+    chrome: data.chrome,
+    // Always start with at least one page so the editor has a surface.
+    pages: data.pages?.length ? data.pages : [{ id: newId(), blocks: [] }],
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  await db.reportTemplates.add(template);
+  return id;
+}
+
+export async function updateReportTemplate(
+  id: string,
+  patch: Partial<ReportTemplate>,
+): Promise<void> {
+  await db.reportTemplates.update(id, { ...patch, updatedAt: now() });
+}
+
+export async function deleteReportTemplate(id: string): Promise<void> {
+  await db.reportTemplates.delete(id);
+}
+
+// ───────── Photos (logos/images; Blobs, base64 only on export) ─────────
+
+export function usePhotos(): Photo[] | undefined {
+  return useLiveQuery(() => db.photos.orderBy('createdAt').reverse().toArray());
+}
+
+/** The raw Blob for one photo, for building an object URL at the view layer. */
+export function usePhotoBlob(id: string | undefined): Blob | null | undefined {
+  return useLiveQuery(
+    async () => (id ? ((await db.photos.get(id))?.blob ?? null) : null),
+    [id],
+  );
+}
+
+export async function createPhoto(blob: Blob, mime: string): Promise<string> {
+  const id = newId();
+  await db.photos.add({ id, blob, mime, createdAt: now() });
+  return id;
+}
+
+export async function deletePhoto(id: string): Promise<void> {
+  await db.photos.delete(id);
 }
 
 // ───────── Settings (singleton) ─────────

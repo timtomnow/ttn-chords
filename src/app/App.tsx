@@ -4,6 +4,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { Songs } from '@/pages/Songs';
 import { Setlists } from '@/pages/Setlists';
 import { Reports } from '@/pages/Reports';
+import { ReportPrint } from '@/pages/reports/ReportPrint';
 import { Settings } from '@/pages/Settings';
 import { ThemeProvider } from './theme';
 import { installTtnBackupAdapter } from '@/lib/ttnBackup';
@@ -22,6 +23,9 @@ export function App() {
   return (
     <ThemeProvider>
       <Routes>
+        {/* Print view lives outside the shell (more specific than /reports/*,
+            so it wins) — the printed page is just the report. */}
+        <Route path="/reports/:id/print" element={<ReportPrint />} />
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="/songs" replace />} />
           <Route path="/songs/*" element={<Songs />} />

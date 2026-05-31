@@ -56,5 +56,38 @@
   }
 }
 
-/* Print styles for PDF report generation are added in the report-generator
-   phase (Phase 8). Keep report layouts behind a dedicated @media print block. */
+/* Report PDF print styles (Phase 8). The print view (ReportPrint) renders a
+   `.report-print` container of `.report-page` sheets; the @page size/margin is
+   injected per template. Here we strip chrome, force a white sheet, and break
+   between explicit pages. A long flow column spills onto a continuation sheet
+   because `.report-page` uses min-height (set inline) and never clips. */
+@media print {
+  /* Hide everything except the print container; reveal it and its subtree. */
+  body * {
+    visibility: hidden;
+  }
+  .report-print,
+  .report-print * {
+    visibility: visible;
+  }
+  .report-print {
+    position: absolute;
+    inset: 0;
+    background: #fff !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  /* Each explicit page starts a fresh sheet; the last one mustn't add a blank. */
+  .report-page {
+    break-after: page;
+    box-shadow: none !important;
+  }
+  .report-page:last-child {
+    break-after: auto;
+  }
+  /* Keep blocks from splitting mid-figure where we can. */
+  .break-inside-avoid {
+    break-inside: avoid;
+  }
+}

@@ -40,7 +40,7 @@ live under the same domain and back up the same way.
 | Icons          | lucide-react                            | |
 | ChordPro       | Custom parser/serializer (our model)    | No heavyweight dep; we need the beat-timing extension. Revisit if a lib proves better. |
 | Chord charts   | Custom SVG renderer + bundled library   | Tuning-driven so new instruments need no code. |
-| PDF engine     | **OPEN DECISION** (Phase 8)             | Must support multi-page. Candidates: browser print-to-PDF (zero-dep, recommended) vs. pdf-lib/jsPDF/react-pdf. Decide at Phase 8. |
+| PDF engine     | **Browser print-to-PDF** (CSS `@page`)  | Decided in Phase 8. Zero new deps; renders our React SVG chord/rhythm charts faithfully (a PDF library would mean redrawing every chart). The print view injects a per-template `@page` size/margin rule; the user prints / "Save as PDF". Caveat: no CSS margin-box page counters in browsers, so `{page}`/`{pages}` resolve to **explicit-page** numbers, not physical sheets (see Phase 8 notes). |
 
 > **No new top-level deps** without updating this table and noting the tradeoff.
 > **Bump the Dexie version** in `schema.ts` + add a migration on any stored-shape
@@ -193,12 +193,53 @@ CRUD; Settings (theme, accent, backup). Placeholder pages for Setlists/Reports.
 - Custom symbols appear as **brushes** in the pattern editor and render in
   `RhythmChart` everywhere (read view, performance, settings) via the symbol map.
 
-### Phase 8 — Report generator (PDF) — multi-page required
-- Page-oriented editor: pages → blocks (song, chordChart, image, logo, rhythm,
-  text, spacer); drag to arrange; page size/orientation.
-- Logos/images from the `photos` table.
-- **Decide the PDF engine here** (print-to-PDF vs. library) — must support
-  multi-page layout and page breaks cleanly. Record the decision in §2.
+### Phase 8 — Report generator (PDF) — multi-page required ✅
+Decisions locked with the teacher up front (all "recommended" options):
+explicit pages with spill; two-tier flow + floating blocks; browser
+print-to-PDF; live song references; template-level header/footer with tokens +
+first-page-different; a report-scoped block registry mirroring the Phase-5
+performance-view pattern.
+
+- **Block registry** (`src/lib/report/`): each block type self-registers a
+  descriptor (`type`, label, icon, `defaultPlacement`, `defaultConfig`,
+  `Render`, optional `Editor`) via `registerBlock()` — mirrors the performance-
+  view registry. Adding a block = one module in `blocks/` + an entry in
+  `blocks/index.ts`; the editor palette, canvas and print view need no changes.
+  Built reuse-aware (the descriptor could later feed on-screen layouts) but kept
+  report-scoped. Built-in blocks: **song, text, chordChart, rhythm, image,
+  spacer**.
+- **Two-tier placement** (`BlockPlacement`): `flow` blocks stack in the page's
+  column (dnd-kit reorder, drag handle) and reflow; `floating` blocks are
+  free-dragged (pointer math via the content-box rect, so it's scale-safe) with
+  a width handle. Floating x/y/w are **percentages of the content box**, resolved
+  against the nominal sheet so floats stay anchored even when flow content spills.
+- **Pages + spill**: explicit pages you add/remove; `ReportPageSurface` uses
+  `min-height` (never clips), so a long flow column grows the page and the print
+  stylesheet paginates it onto a continuation sheet. `break-after: page` between
+  explicit pages; `break-inside: avoid` on song sections.
+- **Geometry** (`lib/report/geometry.ts`): Letter/A4/Legal × portrait/landscape
+  at 96dpi; the editor surface equals the printed sheet 1:1.
+- **Header/footer** (`ReportChrome` + `lib/report/tokens.ts`): per-template
+  bands (left/center/right) with `{page} {pages} {title} {date}` tokens and a
+  first-page-different toggle. Rendered as in-flow bands (browsers don't support
+  CSS margin-box page counters), so `{page}` = explicit-page index. Caveat: a
+  spilled page repeats its header/footer only at the start/end of its content,
+  not per physical sheet — acceptable for the one-song-per-page common case.
+- **Live song references**: a song block stores `songId` + view options
+  (transpose, which sections, show charts/rhythm/chords-over-lyrics); edits flow
+  in, a deleted song degrades to a gentle placeholder (like `SetlistRun`).
+- **Images**: `image` block stores a `photoId`; photos live in the `photos`
+  table (Blob, base64 only on export). Upload + a small library picker in the
+  block inspector (`createPhoto`/`deletePhoto`/`usePhotoUrl`).
+- **Print view** (`/reports/:id/print`): a top-level route **outside the app
+  shell** (more specific than `/reports/*`, so it wins) that renders the pages,
+  injects the `@page` rule, and calls `window.print()`. Print CSS in `index.css`.
+- **Create flows**: blank, **from a song** (one page), or **from a setlist**
+  (one page per entry, with a `{title} … Page {page} of {pages}` footer).
+- Data: `ReportTemplate`/`ReportPage`/`ReportBlock`/`BlockPlacement`/
+  `ReportChrome` fleshed out in `types.ts`. `reportTemplates` already existed in
+  Dexie **v2** and only gained non-indexed fields, so **no version bump** was
+  needed; it's already in JSON export/import + the ttn-backup payload.
 
 ### Phase 9 — Import from a song URL (e.g. Ultimate Guitar)
 - Given a URL, pull lyrics/chords into an editable **draft** song.
@@ -243,7 +284,15 @@ exactly as before. This maps to `ChordEvent.beat: { n, d }` and is a strict
 subset of a future full-notation model (add `duration` later — additive only).
 
 ## 6. Open questions / parking lot
-- PDF engine (Phase 8).
+- ~~PDF engine (Phase 8)~~ — decided: browser print-to-PDF (see §2 + Phase 8).
+- **Report polish (post-Phase 8):** per-physical-sheet headers/footers would
+  need a paged-media polyfill (e.g. paged.js) — deferred to keep the zero-dep
+  print path. Editor zoom / fit-to-width (canvas currently scrolls at 1:1).
+  Floating-block resize is width-only today. Manual page breaks inside a flow.
+- **Reuse the block registry for on-screen layouts:** the report block
+  descriptor (`src/lib/report/types.ts`) was built reuse-aware; a future
+  customizable per-song screen view could share it with the Phase-5 performance-
+  view registry. Intentionally NOT coupled in Phase 8.
 - Editor affordances: tap-to-place chords and a visual per-event beat picker
   (syntax + storage already done in Phases 2–3; this is UI sugar).
 - More performance views (registry already supports them — Phase 5): ticker /
