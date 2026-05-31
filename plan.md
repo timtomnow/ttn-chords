@@ -137,15 +137,30 @@ CRUD; Settings (theme, accent, backup). Placeholder pages for Setlists/Reports.
   (per-string fret editor with live preview; keyboard derives from the symbol).
 - `lib/song.ts` `uniqueChords()` helper + tests.
 
-### Phase 5 — Song reading / performance view
-- Clean read view with transpose & capo controls (non-destructive).
-- Large-text, high-contrast "perform" mode; Screen Wake Lock during a session
-  (best-effort, mirror ttn-list's `useWakeLock`).
-- Auto-scroll option keyed off tempo (uses the timing layer).
+### Phase 5 — Song reading / performance view ✅
+- **Pluggable performance-view architecture** (`src/lib/performance/`): a
+  registry of self-registering view modules + a `PerformShell` that owns all
+  chrome (top bar, view switcher, transpose/zoom/play+speed, wake lock,
+  optional setlist prev/next) and renders whichever view is selected. Adding a
+  new reading view = write a component implementing `PerformanceViewProps` and
+  call `registerView()` — **zero shell changes**. Each view declares
+  `ViewCapabilities` so the shell only shows relevant controls.
+- Built-in views: **Scroll** (full chords+lyrics, zoom, tempo-based auto-scroll
+  fine-tuned by a speed control) and **Lyrics** (big centered lyrics only) — the
+  second one exists to prove the plug-in path.
+- Screen Wake Lock during performance (`useWakeLock`, mirrored from ttn-list);
+  preferred view id persisted in settings.
+- Future view ideas (ticker/cross-screen scroll, fixed-line teleprompter,
+  two-column) slot straight into the registry — see parking lot.
 
-### Phase 6 — Setlists
-- Create setlists; add songs; reorder (dnd-kit); per-entry transpose/capo/notes.
-- Run a setlist: swipe/next-prev through songs in perform mode.
+### Phase 6 — Setlists ✅
+- `SetlistList` + `SetlistEditor`: create, rename/describe, add songs (multi-
+  select modal), reorder (dnd-kit), and per-entry **transpose / capo / notes**
+  overrides (non-destructive to the song).
+- `SetlistRun`: walks entries through the shared `PerformShell` with a
+  `SetlistNav` (prev/next + per-entry transpose); gracefully handles a
+  deleted-song slot with a skip option.
+- `useSongsByIds` repo hook for batch song lookup.
 
 ### Phase 7 — Rhythm patterns
 - Strum-pattern editor on a beat grid (`stepsPerBeat`), stroke per cell.
@@ -204,6 +219,10 @@ subset of a future full-notation model (add `duration` later — additive only).
 - PDF engine (Phase 8).
 - Editor affordances: tap-to-place chords and a visual per-event beat picker
   (syntax + storage already done in Phases 2–3; this is UI sugar).
+- More performance views (registry already supports them — Phase 5): ticker /
+  cross-screen scroll, fixed-line teleprompter (N lines at a time, alignment
+  options), two-column, auto-scroll that follows the beat-timing layer instead
+  of a flat px/sec rate.
 - Audio playback / click track off the timing layer? (future)
 - Chord-chart auto-generation from a chord symbol when no diagram exists
   (already done for bass/piano via computed shapes; consider for guitar/uke).

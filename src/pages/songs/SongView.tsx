@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Minus, Pencil, Plus } from 'lucide-react';
+import { ArrowLeft, Minus, Pencil, Play, Plus } from 'lucide-react';
 import { useSong } from '@/db/repo';
 import { ChordLine } from '@/components/chords/ChordLine';
 import { ChordChart } from '@/components/chords/ChordChart';
@@ -54,9 +54,14 @@ function View({ song }: { song: Song }) {
         <button className="btn-ghost -ml-2" onClick={() => navigate('/songs')}>
           <ArrowLeft size={16} /> Songs
         </button>
-        <button className="btn-secondary" onClick={() => navigate('edit')}>
-          <Pencil size={15} /> Edit
-        </button>
+        <div className="flex gap-2">
+          <button className="btn-secondary" onClick={() => navigate('edit')}>
+            <Pencil size={15} /> Edit
+          </button>
+          <button className="btn-primary" onClick={() => navigate('perform')}>
+            <Play size={15} /> Perform
+          </button>
+        </div>
       </div>
 
       <header className="mb-5">

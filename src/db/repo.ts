@@ -29,6 +29,19 @@ export function useSong(id: string | undefined): Song | null | undefined {
   );
 }
 
+/** Look up many songs by id, returned as a Map for O(1) access. */
+export function useSongsByIds(ids: string[]): Map<string, Song> | undefined {
+  const key = ids.join(',');
+  return useLiveQuery(async () => {
+    const rows = await db.songs.bulkGet(ids);
+    const map = new Map<string, Song>();
+    rows.forEach((r) => {
+      if (r) map.set(r.id, r);
+    });
+    return map;
+  }, [key]);
+}
+
 export async function createSong(
   data: Partial<Song> & Pick<Song, 'title'>,
 ): Promise<string> {

@@ -299,6 +299,8 @@ export type AppSettings = {
   accentColor2?: string;
   /** Which instrument's charts to show by default. '' = bundled guitar. */
   myInstrumentId: string;
+  /** Last-used performance reading view id (see lib/performance/registry). */
+  performanceViewId?: string;
   defaultTimeSignature?: TimeSignature;
   defaultTempo?: number;
   updatedAt: number;
