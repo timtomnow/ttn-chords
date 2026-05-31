@@ -15,6 +15,13 @@
     <meta name="apple-mobile-web-app-title" content="TTN Chords" />
     <title>TTN Chords</title>
     <script>
+      // Minimal `process` shim. Some browser libs (e.g. react-draggable, used by
+      // react-rnd in the report editor) read `process.env.*` at runtime, which
+      // throws "process is not defined" in the browser. Define it before any
+      // module loads so those reads resolve to undefined instead of crashing.
+      window.process = window.process || { env: {} };
+    </script>
+    <script>
       // Apply theme + accent synchronously to avoid a flash of the wrong palette.
       // Mirrored in src/app/theme.tsx and src/lib/accent.ts — keep in sync.
       (function () {
