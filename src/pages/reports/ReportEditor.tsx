@@ -1,9 +1,11 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -12,9 +14,13 @@ import {
   Check,
   Copy,
   GripVertical,
+  Maximize2,
+  PanelRight,
   Plus,
   Printer,
   Trash2,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import {
   DndContext,
@@ -88,10 +94,30 @@ function Editor({ template }: { template: ReportTemplate }) {
   const [saved, setSaved] = useState(true);
   const [sel, setSel] = useState<Sel>(null);
   const [activePageId, setActivePageId] = useState(template.pages[0]?.id ?? '');
+  const [zoom, setZoom] = useState(1);
+  const [showInspector, setShowInspector] = useState(true);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const date = useMemo(() => new Date().toLocaleDateString(), []);
   const geo = useMemo(() => pageGeometry(pageSize, orientation), [pageSize, orientation]);
+
+  // Scale the page to fit the available canvas width (accounts for the sidebar
+  // and the inspector, whatever the screen size).
+  const fit = useCallback(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const avail = el.clientWidth - 32; // p-4 on both sides
+    setZoom(clamp(Number((avail / geo.widthPx).toFixed(2)), 0.25, 1.5));
+  }, [geo.widthPx]);
+
+  // Auto-fit on mount and whenever the available width or sheet size changes.
+  useEffect(() => {
+    const id = requestAnimationFrame(fit);
+    return () => cancelAnimationFrame(id);
+  }, [fit, showInspector]);
+  const stepZoom = (d: number) =>
+    setZoom((z) => clamp(Number((z + d).toFixed(2)), 0.25, 2));
 
   // Debounced autosave (mirrors the song/setlist editors).
   const firstRun = useRef(true);
@@ -265,6 +291,34 @@ function Editor({ template }: { template: ReportTemplate }) {
             'Saving…'
           )}
         </span>
+
+        {/* Zoom controls */}
+        <div className="flex items-center gap-0.5 rounded-xl bg-ink-100 p-0.5 dark:bg-ink-800">
+          <button className="btn-ghost px-2 py-1" onClick={() => stepZoom(-0.1)} title="Zoom out">
+            <ZoomOut size={15} />
+          </button>
+          <button
+            className="btn-ghost w-12 px-1 py-1 text-xs tabular-nums"
+            onClick={fit}
+            title="Fit to width"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button className="btn-ghost px-2 py-1" onClick={() => stepZoom(0.1)} title="Zoom in">
+            <ZoomIn size={15} />
+          </button>
+          <button className="btn-ghost px-2 py-1" onClick={fit} title="Fit to width">
+            <Maximize2 size={15} />
+          </button>
+        </div>
+        <button
+          className={`btn-ghost px-2 py-1 ${showInspector ? 'text-accent' : ''}`}
+          onClick={() => setShowInspector((s) => !s)}
+          title="Toggle panel"
+        >
+          <PanelRight size={16} />
+        </button>
+
         <button
           className="btn-primary"
           onClick={() => navigate(`/reports/${template.id}/print`)}
@@ -275,10 +329,13 @@ function Editor({ template }: { template: ReportTemplate }) {
 
       <div className="flex flex-col gap-4 lg:flex-row">
         {/* Canvas */}
-        <div className="min-w-0 flex-1 overflow-auto rounded-2xl bg-ink-100 p-4 dark:bg-ink-950">
+        <div
+          ref={canvasRef}
+          className="min-w-0 flex-1 overflow-auto rounded-2xl bg-ink-100 p-4 dark:bg-ink-950"
+        >
           <div className="flex flex-col items-center gap-6">
             {pages.map((page, i) => (
-              <div key={page.id} className="space-y-1">
+              <div key={page.id} className="space-y-1" style={{ width: geo.widthPx * zoom }}>
                 <div className="flex items-center justify-between px-1 text-xs text-ink-500">
                   <button
                     className={activePageId === page.id ? 'font-semibold text-accent' : ''}
@@ -293,27 +350,30 @@ function Editor({ template }: { template: ReportTemplate }) {
                     </button>
                   )}
                 </div>
-                <EditPage
-                  template={draft}
-                  page={page}
-                  pageIndex={i}
-                  geo={geo}
-                  date={date}
-                  sel={sel}
-                  sensors={sensors}
-                  onSelect={(blockId) => {
-                    setActivePageId(page.id);
-                    setSel({ pageId: page.id, blockId });
-                  }}
-                  onSelectPage={() => {
-                    setActivePageId(page.id);
-                    setSel(null);
-                  }}
-                  onMoveFloating={(blockId, placement) =>
-                    patchBlock(page.id, blockId, { placement })
-                  }
-                  onReorderFlow={(a, b) => reorderFlow(page.id, a, b)}
-                />
+                <PageScaler zoom={zoom} width={geo.widthPx}>
+                  <EditPage
+                    template={draft}
+                    page={page}
+                    pageIndex={i}
+                    geo={geo}
+                    date={date}
+                    zoom={zoom}
+                    sel={sel}
+                    sensors={sensors}
+                    onSelect={(blockId) => {
+                      setActivePageId(page.id);
+                      setSel({ pageId: page.id, blockId });
+                    }}
+                    onSelectPage={() => {
+                      setActivePageId(page.id);
+                      setSel(null);
+                    }}
+                    onMoveFloating={(blockId, placement) =>
+                      patchBlock(page.id, blockId, { placement })
+                    }
+                    onReorderFlow={(a, b) => reorderFlow(page.id, a, b)}
+                  />
+                </PageScaler>
               </div>
             ))}
             <button className="btn-secondary" onClick={addPage}>
@@ -323,6 +383,7 @@ function Editor({ template }: { template: ReportTemplate }) {
         </div>
 
         {/* Inspector */}
+        {showInspector && (
         <aside className="shrink-0 space-y-4 lg:w-80">
           {selectedBlock && sel ? (
             <BlockInspector
@@ -330,6 +391,7 @@ function Editor({ template }: { template: ReportTemplate }) {
               pages={pages}
               pageId={sel.pageId}
               onConfig={(cfg) => patchConfig(sel.pageId, sel.blockId, cfg)}
+              onScale={(scale) => patchBlock(sel.pageId, sel.blockId, { scale })}
               onPlacement={(placement) => patchBlock(sel.pageId, sel.blockId, { placement })}
               onMovePage={(toPage) => moveBlockToPage(sel.pageId, sel.blockId, toPage)}
               onDuplicate={() => duplicateBlock(sel.pageId, sel.blockId)}
@@ -361,6 +423,7 @@ function Editor({ template }: { template: ReportTemplate }) {
             </>
           )}
         </aside>
+        )}
       </div>
     </div>
   );
@@ -368,6 +431,37 @@ function Editor({ template }: { template: ReportTemplate }) {
 
 function pageIndexOf(pages: ReportPage[], id: string): number {
   return Math.max(0, pages.findIndex((p) => p.id === id));
+}
+
+// Reserves correctly-scaled layout space for a CSS-transformed page (transform
+// alone wouldn't shrink the box, leaving big gaps). Measures the unscaled child
+// height live and applies the zoom factor to the wrapper.
+function PageScaler({
+  zoom,
+  width,
+  children,
+}: {
+  zoom: number;
+  width: number;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeight(el.offsetHeight));
+    ro.observe(el);
+    setHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div style={{ width: width * zoom, height: height * zoom }}>
+      <div ref={ref} style={{ width, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -380,6 +474,7 @@ function EditPage({
   pageIndex,
   geo,
   date,
+  zoom,
   sel,
   sensors,
   onSelect,
@@ -392,6 +487,7 @@ function EditPage({
   pageIndex: number;
   geo: ReturnType<typeof pageGeometry>;
   date: string;
+  zoom: number;
   sel: Sel;
   sensors: ReturnType<typeof useSensors>;
   onSelect: (blockId: string) => void;
@@ -436,6 +532,7 @@ function EditPage({
                   <FlowBlock
                     key={b.id}
                     block={b}
+                    zoom={zoom}
                     selected={sel?.blockId === b.id}
                     onSelect={() => onSelect(b.id)}
                   />
@@ -471,20 +568,31 @@ function EditPage({
 
 function FlowBlock({
   block,
+  zoom,
   selected,
   onSelect,
 }: {
   block: ReportBlock;
+  zoom: number;
   selected: boolean;
   onSelect: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
   });
+  // The page is CSS-scaled by `zoom`; dnd-kit's drag translate is in unscaled
+  // px, so divide by zoom to keep the dragged block under the pointer.
+  const dragTransform = transform
+    ? { ...transform, x: transform.x / zoom, y: transform.y / zoom }
+    : transform;
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
+      style={{
+        transform: CSS.Transform.toString(dragTransform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
@@ -582,6 +690,7 @@ function BlockInspector({
   pages,
   pageId,
   onConfig,
+  onScale,
   onPlacement,
   onMovePage,
   onDuplicate,
@@ -592,6 +701,7 @@ function BlockInspector({
   pages: ReportPage[];
   pageId: string;
   onConfig: (cfg: Record<string, unknown>) => void;
+  onScale: (scale: number) => void;
   onPlacement: (placement: BlockPlacement) => void;
   onMovePage: (toPage: string) => void;
   onDuplicate: () => void;
@@ -600,6 +710,7 @@ function BlockInspector({
 }) {
   const def = getBlock(block.type);
   const floating = block.placement.mode === 'floating';
+  const scale = block.scale ?? 1;
 
   return (
     <section className="card space-y-4 p-4">
@@ -611,6 +722,26 @@ function BlockInspector({
       </div>
 
       {def?.Editor && <def.Editor block={block} onChange={onConfig} />}
+
+      <label className="block border-t border-ink-200 pt-3 dark:border-ink-800">
+        <span className="label mb-1 flex items-center justify-between">
+          <span>Size {Math.round(scale * 100)}%</span>
+          {scale !== 1 && (
+            <button className="text-xs text-accent" onClick={() => onScale(1)}>
+              Reset
+            </button>
+          )}
+        </span>
+        <input
+          type="range"
+          min={0.5}
+          max={2.5}
+          step={0.05}
+          value={scale}
+          onChange={(e) => onScale(Number(e.target.value))}
+          className="w-full accent-accent"
+        />
+      </label>
 
       <div className="space-y-2 border-t border-ink-200 pt-3 dark:border-ink-800">
         <span className="label">Placement</span>

@@ -304,6 +304,12 @@ export type ReportBlock = {
   id: string;
   type: ReportBlockType;
   placement: BlockPlacement;
+  /**
+   * Uniform content scale (default 1) — the per-block "size" control. Applied
+   * by the renderer for every block type (text reflows + grows, SVG charts and
+   * images zoom), so one knob resizes any block. Additive/optional.
+   */
+  scale?: number;
   /** Block-type-specific config; resolved at render time by the block module. */
   config: Record<string, unknown>;
 };
