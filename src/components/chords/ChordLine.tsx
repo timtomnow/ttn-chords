@@ -11,6 +11,8 @@ import { Fragment } from 'react';
 import type { Line } from '@/types';
 import { transposeChordSymbol } from '@/lib/music';
 
+export type ChordClick = (chord: string, anchor: { x: number; y: number }) => void;
+
 export function ChordLine({
   line,
   transpose = 0,
@@ -20,7 +22,7 @@ export function ChordLine({
   line: Line;
   transpose?: number;
   preferFlats?: boolean;
-  onChordClick?: (chord: string) => void;
+  onChordClick?: ChordClick;
 }) {
   const anchored = line.events
     .filter((e) => e.charIndex !== undefined && e.chord)
@@ -62,7 +64,7 @@ export function ChordLine({
 
 // The anchored chord row is built as plain text for alignment; to make chords
 // clickable we re-split it on whitespace while preserving column positions.
-function renderChordRow(row: string, onClick: ((c: string) => void) | undefined) {
+function renderChordRow(row: string, onClick: ChordClick | undefined) {
   if (!row.trim()) return ' ';
   const parts: (string | { chord: string; at: number })[] = [];
   const re = /\S+/g;
@@ -82,19 +84,16 @@ function renderChordRow(row: string, onClick: ((c: string) => void) | undefined)
   );
 }
 
-function ClickableChord({
-  chord,
-  onClick,
-}: {
-  chord: string;
-  onClick?: (c: string) => void;
-}) {
+function ClickableChord({ chord, onClick }: { chord: string; onClick?: ChordClick }) {
   if (!onClick) return <span>{chord}</span>;
   return (
     <button
       type="button"
       className="rounded px-0.5 hover:bg-accent/10"
-      onClick={() => onClick(chord)}
+      onClick={(e) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        onClick(chord, { x: r.left + r.width / 2, y: r.bottom });
+      }}
     >
       {chord}
     </button>

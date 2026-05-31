@@ -11,6 +11,7 @@ import {
   parseExportPayload,
 } from '@/db/exportImport';
 import { openTtnBackupRestore } from '@/lib/ttnBackup';
+import { InstrumentSettings } from './settings/InstrumentSettings';
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -87,6 +88,9 @@ export function Settings() {
           </div>
         </div>
       </section>
+
+      {/* Instrument & chords */}
+      <InstrumentSettings />
 
       {/* Backup */}
       <section className="space-y-3">

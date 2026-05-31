@@ -166,8 +166,8 @@ function Editor({ song }: { song: Song }) {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <button className="btn-ghost -ml-2" onClick={() => navigate('/songs')}>
-          <ArrowLeft size={16} /> Songs
+        <button className="btn-ghost -ml-2" onClick={() => navigate(`/songs/${song.id}`)}>
+          <ArrowLeft size={16} /> Done
         </button>
         <span className="flex items-center gap-1 text-xs text-ink-400">
           {saved ? (

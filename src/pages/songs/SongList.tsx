@@ -27,7 +27,7 @@ export function SongList() {
 
   async function quickAdd() {
     const id = await createSong({ title: 'Untitled song' });
-    navigate(id);
+    navigate(`${id}/edit`);
   }
 
   return (

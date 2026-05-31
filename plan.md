@@ -123,11 +123,19 @@ CRUD; Settings (theme, accent, backup). Placeholder pages for Setlists/Reports.
   per-event beat-assignment UI (the data + text syntax already support both;
   this is an editor affordance, see Phase 11 / parking lot).
 
-### Phase 4 — Chord charts
-- SVG renderers: `FretboardChart` (tuning-driven) and `KeyboardChart`.
-- Clickable chord names in the song view open the chart in a popover/sheet.
-- "My instrument" setting; per-instrument chart resolution (bundled + custom).
-- UI to add/override a custom chord shape and to define a custom instrument.
+### Phase 4 — Chord charts ✅
+- SVG renderers: `FretboardChart` (tuning-driven; nut/position/barres/open/mute
+  + finger numbers) and `KeyboardChart` (root in accent color). `ChordChart`
+  switch wrapper.
+- `SongView` read page: metadata, transpose +/−, a chord-chart strip of every
+  chord used, and clickable chord names that open `ChordPopover` (portal,
+  viewport-clamped). Songs now route `/songs/:id` (read) + `/songs/:id/edit`.
+- `useChartResolver` bridges DB (my-instrument + user instruments + user defs)
+  to `resolveChord`. "My instrument" setting drives charts everywhere.
+- `InstrumentSettings`: pick my instrument, add custom instruments
+  (tuning-driven), and add/override/delete chord charts via `CustomChordEditor`
+  (per-string fret editor with live preview; keyboard derives from the symbol).
+- `lib/song.ts` `uniqueChords()` helper + tests.
 
 ### Phase 5 — Song reading / performance view
 - Clean read view with transpose & capo controls (non-destructive).
