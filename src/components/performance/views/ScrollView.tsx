@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { ScrollText } from 'lucide-react';
 import { ChordLine } from '@/components/chords/ChordLine';
 import { RhythmChart } from '@/components/rhythm/RhythmChart';
-import { useRhythmPatternsByIds } from '@/db/repo';
+import { useRhythmPatternsByIds, useRhythmSymbolMap } from '@/db/repo';
 import { defaultLabelForKind } from '@/lib/chordpro';
 import { registerView } from '@/lib/performance/registry';
 import type { PerformanceViewProps } from '@/lib/performance/types';
@@ -31,6 +31,7 @@ function ScrollView({
     [song.sections],
   );
   const patterns = useRhythmPatternsByIds(patternIds);
+  const symbolMap = useRhythmSymbolMap();
 
   // Base auto-scroll rate: derive a gentle px/sec from tempo (faster songs
   // scroll a bit faster), then scale by the shell speed control. Tempo-less
@@ -92,7 +93,7 @@ function ScrollView({
               </h3>
               {pattern && (
                 <div className="mb-3 overflow-x-auto">
-                  <RhythmChart pattern={pattern} size="sm" />
+                  <RhythmChart pattern={pattern} symbols={symbolMap} size="sm" />
                 </div>
               )}
               <div className="space-y-2">

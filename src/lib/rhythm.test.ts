@@ -4,8 +4,10 @@ import {
   isAccented,
   makeSteps,
   resizeSteps,
+  resolveCell,
   stepCount,
 } from './rhythm';
+import type { RhythmSymbol } from '@/types';
 
 describe('stepCount / makeSteps', () => {
   it('multiplies beats by resolution', () => {
@@ -61,5 +63,28 @@ describe('isAccented', () => {
     expect(isAccented({ stroke: 'down', accent: true })).toBe(true);
     expect(isAccented({ stroke: 'down' })).toBe(false);
     expect(isAccented({ stroke: 'rest' })).toBe(false);
+  });
+});
+
+describe('resolveCell', () => {
+  const symbols = new Map<string, RhythmSymbol>([
+    ['c1', { id: 'c1', name: 'Continue', symbol: '/', createdAt: 0, updatedAt: 0 }],
+  ]);
+
+  it('resolves a built-in stroke', () => {
+    expect(resolveCell({ stroke: 'down' })).toMatchObject({ symbol: '↓', isUp: false });
+    expect(resolveCell({ stroke: 'up' }).isUp).toBe(true);
+    expect(resolveCell({ stroke: 'rest' }).empty).toBe(true);
+  });
+
+  it('resolves a user-defined symbol by id', () => {
+    const cell = resolveCell({ stroke: 'rest', customId: 'c1' }, symbols);
+    expect(cell).toMatchObject({ symbol: '/', label: 'Continue', empty: false });
+  });
+
+  it('shows a placeholder when the custom symbol was deleted', () => {
+    const cell = resolveCell({ stroke: 'rest', customId: 'gone' }, symbols);
+    expect(cell.symbol).toBe('·');
+    expect(cell.empty).toBe(false);
   });
 });

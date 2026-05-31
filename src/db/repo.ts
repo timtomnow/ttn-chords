@@ -9,6 +9,7 @@ import type {
   ChordDefinition,
   Instrument,
   RhythmPattern,
+  RhythmSymbol,
   Setlist,
   Song,
 } from '@/types';
@@ -215,6 +216,43 @@ export async function updateRhythmPattern(
 
 export async function deleteRhythmPattern(id: string): Promise<void> {
   await db.rhythmPatterns.delete(id);
+}
+
+// ───────── Rhythm symbols (user-defined glyphs; Phase 7B) ─────────
+
+export function useRhythmSymbols(): RhythmSymbol[] | undefined {
+  return useLiveQuery(() => db.rhythmSymbols.orderBy('name').toArray());
+}
+
+/** Symbols as a Map for O(1) lookup by id when rendering. */
+export function useRhythmSymbolMap(): Map<string, RhythmSymbol> | undefined {
+  return useLiveQuery(async () => {
+    const rows = await db.rhythmSymbols.toArray();
+    return new Map(rows.map((r) => [r.id, r]));
+  });
+}
+
+export async function createRhythmSymbol(name: string, symbol: string): Promise<string> {
+  const id = newId();
+  await db.rhythmSymbols.add({
+    id,
+    name: name.trim(),
+    symbol: symbol.trim(),
+    createdAt: now(),
+    updatedAt: now(),
+  });
+  return id;
+}
+
+export async function updateRhythmSymbol(
+  id: string,
+  patch: Partial<RhythmSymbol>,
+): Promise<void> {
+  await db.rhythmSymbols.update(id, { ...patch, updatedAt: now() });
+}
+
+export async function deleteRhythmSymbol(id: string): Promise<void> {
+  await db.rhythmSymbols.delete(id);
 }
 
 // ───────── Settings (singleton) ─────────

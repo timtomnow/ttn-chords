@@ -1,7 +1,11 @@
-// Grid editor for a strum pattern. Click a cell to cycle its stroke
-// (rest → down → up → accent → mute → tap). Meter and resolution are
-// adjustable; changing them resizes the grid (preserving existing cells). Live
-// RhythmChart preview. Saves to the rhythmPatterns table.
+// Grid editor for a strum pattern. Pick a "brush" from the palette (built-in
+// strokes + user-defined symbols), then tap cells to paint it; tapping a cell
+// that already holds the active brush clears it to a rest. Meter and resolution
+// are adjustable; changing them resizes the grid (preserving existing cells).
+// Live RhythmChart preview. Saves to the rhythmPatterns table.
+//
+// A palette (not click-cycling) is used because cycling through arbitrary
+// user-defined symbols (Phase 7B) would be unpredictable.
 
 import { useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
@@ -9,16 +13,12 @@ import { RhythmChart } from './RhythmChart';
 import {
   createRhythmPattern,
   updateRhythmPattern,
+  useRhythmSymbolMap,
+  useRhythmSymbols,
 } from '@/db/repo';
-import {
-  STROKE_META,
-  cycleStroke,
-  isAccented,
-  makeSteps,
-  resizeSteps,
-} from '@/lib/rhythm';
+import { STROKE_META, makeSteps, resizeSteps } from '@/lib/rhythm';
 import { newId } from '@/lib/id';
-import type { RhythmPattern, StrumStep, TimeSignature } from '@/types';
+import type { RhythmPattern, StrumStep, StrumStroke, TimeSignature } from '@/types';
 
 const RESOLUTIONS = [
   { value: 1, label: 'Quarter (1)' },
@@ -26,6 +26,25 @@ const RESOLUTIONS = [
   { value: 3, label: 'Triplet (3)' },
   { value: 4, label: 'Sixteenth (4)' },
 ];
+
+// A brush is either a built-in stroke or a custom symbol id.
+type Brush =
+  | { kind: 'stroke'; stroke: StrumStroke }
+  | { kind: 'custom'; customId: string };
+
+const STROKE_BRUSHES: StrumStroke[] = ['down', 'up', 'accent', 'mute', 'tap'];
+
+function brushToStep(brush: Brush): StrumStep {
+  return brush.kind === 'stroke'
+    ? { stroke: brush.stroke }
+    : { stroke: 'rest', customId: brush.customId };
+}
+
+function stepMatchesBrush(step: StrumStep, brush: Brush): boolean {
+  return brush.kind === 'stroke'
+    ? !step.customId && step.stroke === brush.stroke
+    : step.customId === brush.customId;
+}
 
 export function RhythmPatternEditor({
   open,
@@ -36,9 +55,11 @@ export function RhythmPatternEditor({
   open: boolean;
   onClose: () => void;
   initial?: RhythmPattern;
-  /** Called with the saved pattern id (useful when creating inline). */
   onSaved?: (id: string) => void;
 }) {
+  const customSymbols = useRhythmSymbols();
+  const symbolMap = useRhythmSymbolMap();
+
   const [name, setName] = useState(initial?.name ?? '');
   const [ts, setTs] = useState<TimeSignature>(
     initial?.timeSignature ?? { beats: 4, unit: 4 },
@@ -47,6 +68,7 @@ export function RhythmPatternEditor({
   const [steps, setSteps] = useState<StrumStep[]>(
     initial?.steps ?? makeSteps({ beats: 4, unit: 4 }, 4),
   );
+  const [brush, setBrush] = useState<Brush>({ kind: 'stroke', stroke: 'down' });
 
   function changeMeter(next: Partial<TimeSignature>, nextSpb?: number) {
     const newTs = { ...ts, ...next };
@@ -56,9 +78,13 @@ export function RhythmPatternEditor({
     setSteps((prev) => resizeSteps(prev, newTs, spb));
   }
 
-  function toggleCell(i: number) {
+  function paintCell(i: number) {
     setSteps((prev) =>
-      prev.map((s, idx) => (idx === i ? { stroke: cycleStroke(s.stroke) } : s)),
+      prev.map((s, idx) => {
+        if (idx !== i) return s;
+        // Toggle off if the cell already holds the active brush.
+        return stepMatchesBrush(s, brush) ? { stroke: 'rest' } : brushToStep(brush);
+      }),
     );
   }
 
@@ -164,10 +190,54 @@ export function RhythmPatternEditor({
           </label>
         </div>
 
+        {/* Brush palette */}
+        <div>
+          <span className="label mb-1 block">Brush</span>
+          <div className="flex flex-wrap gap-1.5">
+            {STROKE_BRUSHES.map((stroke) => {
+              const active = brush.kind === 'stroke' && brush.stroke === stroke;
+              const meta = STROKE_META[stroke];
+              return (
+                <button
+                  key={stroke}
+                  onClick={() => setBrush({ kind: 'stroke', stroke })}
+                  className={active ? 'chip chip-active' : 'chip'}
+                  title={meta.label}
+                >
+                  <span className="font-semibold">
+                    {stroke === 'accent' ? `>${meta.symbol}` : meta.symbol}
+                  </span>
+                  {meta.label.split(' ')[0]}
+                </button>
+              );
+            })}
+            {customSymbols?.map((sym) => {
+              const active = brush.kind === 'custom' && brush.customId === sym.id;
+              return (
+                <button
+                  key={sym.id}
+                  onClick={() => setBrush({ kind: 'custom', customId: sym.id })}
+                  className={active ? 'chip chip-active' : 'chip'}
+                  title={sym.name}
+                >
+                  <span className="font-semibold">{sym.symbol}</span>
+                  {sym.name}
+                </button>
+              );
+            })}
+          </div>
+          {(!customSymbols || customSymbols.length === 0) && (
+            <p className="mt-1 text-xs text-ink-400">
+              Add your own symbols (e.g. continue “/”, quick stop “!”) in Settings →
+              Rhythm symbols.
+            </p>
+          )}
+        </div>
+
         {/* Editable grid */}
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <span className="label">Pattern · tap cells to cycle</span>
+            <span className="label">Pattern · tap cells to paint</span>
             <button className="btn-ghost text-xs" onClick={clearAll}>
               Clear
             </button>
@@ -175,36 +245,36 @@ export function RhythmPatternEditor({
           <div className="flex flex-wrap gap-1 rounded-xl border border-ink-200 p-2 dark:border-ink-800">
             {steps.map((step, i) => {
               const beatStart = i % stepsPerBeat === 0;
-              const accent = isAccented(step);
+              const sym = step.customId ? symbolMap?.get(step.customId) : undefined;
+              const accent = !step.customId && (step.stroke === 'accent' || step.accent === true);
+              const glyph = sym
+                ? sym.symbol
+                : accent
+                  ? `>${STROKE_META[step.stroke].symbol}`
+                  : STROKE_META[step.stroke].symbol;
+              const filled = Boolean(step.customId) || step.stroke !== 'rest';
               return (
                 <button
                   key={i}
-                  onClick={() => toggleCell(i)}
+                  onClick={() => paintCell(i)}
                   className={[
                     'flex h-9 w-8 items-center justify-center rounded text-sm transition',
-                    beatStart
-                      ? 'bg-ink-100 dark:bg-ink-800'
-                      : 'bg-ink-50 dark:bg-ink-950/40',
-                    step.stroke !== 'rest' ? 'ring-1 ring-accent' : 'hover:bg-ink-200 dark:hover:bg-ink-700',
+                    beatStart ? 'bg-ink-100 dark:bg-ink-800' : 'bg-ink-50 dark:bg-ink-950/40',
+                    filled ? 'ring-1 ring-accent' : 'hover:bg-ink-200 dark:hover:bg-ink-700',
                   ].join(' ')}
-                  title={STROKE_META[step.stroke].label}
+                  title={sym?.name ?? STROKE_META[step.stroke].label}
                 >
-                  <span className={accent ? 'font-black' : ''}>
-                    {accent ? `>${STROKE_META[step.stroke].symbol}` : STROKE_META[step.stroke].symbol}
-                  </span>
+                  <span className={accent ? 'font-black' : ''}>{glyph}</span>
                 </button>
               );
             })}
           </div>
-          <p className="mt-1 text-xs text-ink-400">
-            ↓ down · ↑ up · {'>'}↓ accent · ✕ mute · • tap · blank rest
-          </p>
         </div>
 
         {/* Preview */}
         <div>
           <span className="label mb-1 block">Preview</span>
-          <RhythmChart pattern={preview} size="md" />
+          <RhythmChart pattern={preview} symbols={symbolMap} size="md" />
         </div>
       </div>
     </Modal>

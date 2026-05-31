@@ -12,6 +12,7 @@ import type {
   Photo,
   ReportTemplate,
   RhythmPattern,
+  RhythmSymbol,
   Setlist,
   Song,
 } from '@/types';
@@ -21,6 +22,7 @@ const ROW_TABLES = [
   'songs',
   'setlists',
   'rhythmPatterns',
+  'rhythmSymbols',
   'instruments',
   'chordDefinitions',
   'reportTemplates',
@@ -43,6 +45,7 @@ export type ExportPayload = {
   songs: Song[];
   setlists: Setlist[];
   rhythmPatterns: RhythmPattern[];
+  rhythmSymbols: RhythmSymbol[];
   instruments: Instrument[];
   chordDefinitions: ChordDefinition[];
   reportTemplates: ReportTemplate[];
@@ -103,6 +106,7 @@ export async function exportData(): Promise<ExportPayload> {
     songs: rows.songs as Song[],
     setlists: rows.setlists as Setlist[],
     rhythmPatterns: rows.rhythmPatterns as RhythmPattern[],
+    rhythmSymbols: rows.rhythmSymbols as RhythmSymbol[],
     instruments: rows.instruments as Instrument[],
     chordDefinitions: rows.chordDefinitions as ChordDefinition[],
     reportTemplates: rows.reportTemplates as ReportTemplate[],
@@ -161,6 +165,7 @@ export function parseExportPayload(value: unknown): ExportPayload {
     songs: rows('songs') as Song[],
     setlists: rows('setlists') as Setlist[],
     rhythmPatterns: rows('rhythmPatterns') as RhythmPattern[],
+    rhythmSymbols: rows('rhythmSymbols') as RhythmSymbol[],
     instruments: rows('instruments') as Instrument[],
     chordDefinitions: rows('chordDefinitions') as ChordDefinition[],
     reportTemplates: rows('reportTemplates') as ReportTemplate[],

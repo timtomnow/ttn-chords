@@ -2,23 +2,29 @@
 // shows up wherever a rhythm is displayed: the song read view, the performance
 // views, and (Phase 8) draggable onto a PDF report. It renders one bar of the
 // pattern's grid: stroke glyphs over a beat ruler, with bar/beat lines and an
-// optional label. Pure presentation — give it a RhythmPattern.
+// optional label.
+//
+// Cells may be built-in strokes or user-defined symbols (Phase 7B). Pass the
+// symbol map (useRhythmSymbolMap) so customs render; without it, custom cells
+// fall back to a neutral placeholder. Pure presentation.
 
-import type { RhythmPattern } from '@/types';
-import { STROKE_META, isAccented } from '@/lib/rhythm';
+import type { RhythmPattern, RhythmSymbol } from '@/types';
+import { resolveCell } from '@/lib/rhythm';
 
 const SIZES = {
-  sm: { cell: 16, gap: 1, font: 11, head: 14 },
-  md: { cell: 22, gap: 2, font: 14, head: 16 },
-  lg: { cell: 30, gap: 2, font: 18, head: 20 },
+  sm: { cell: 16, gap: 1, font: 11 },
+  md: { cell: 22, gap: 2, font: 14 },
+  lg: { cell: 30, gap: 2, font: 18 },
 } as const;
 
 export function RhythmChart({
   pattern,
+  symbols,
   size = 'md',
   showLabel = true,
 }: {
   pattern: RhythmPattern;
+  symbols?: Map<string, RhythmSymbol>;
   size?: keyof typeof SIZES;
   showLabel?: boolean;
 }) {
@@ -40,8 +46,7 @@ export function RhythmChart({
       <div className="flex" style={{ gap: s.gap }}>
         {steps.map((step, i) => {
           const beatStart = i % stepsPerBeat === 0;
-          const meta = STROKE_META[step.stroke];
-          const accent = isAccented(step);
+          const cell = resolveCell(step, symbols);
           return (
             <div
               key={i}
@@ -53,15 +58,15 @@ export function RhythmChart({
             >
               <span
                 className={[
-                  step.stroke === 'up'
+                  cell.isUp
                     ? 'text-ink-500 dark:text-ink-400'
                     : 'text-ink-900 dark:text-ink-100',
-                  accent ? 'font-black' : 'font-medium',
+                  cell.accent ? 'font-black' : 'font-medium',
                 ].join(' ')}
-                style={{ fontSize: accent ? s.font + 2 : s.font, lineHeight: 1 }}
-                title={meta.label}
+                style={{ fontSize: cell.accent ? s.font + 2 : s.font, lineHeight: 1 }}
+                title={cell.label}
               >
-                {accent ? `>${meta.symbol}` : meta.symbol}
+                {cell.accent ? `>${cell.symbol}` : cell.symbol}
               </span>
             </div>
           );

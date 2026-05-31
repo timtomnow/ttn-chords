@@ -170,8 +170,9 @@ CRUD; Settings (theme, accent, backup). Placeholder pages for Setlists/Reports.
   notation. (A ChordPro grid import bridge is parked for later — see §6.)
 - `lib/rhythm.ts`: grid helpers (`makeSteps`, `resizeSteps`, `cycleStroke`,
   stroke metadata) + tests (`rhythm.test.ts`).
-- `RhythmPatternEditor`: tap-to-cycle grid editor with adjustable meter +
-  subdivision (quarter/eighth/triplet/sixteenth) and a live preview.
+- `RhythmPatternEditor`: brush-palette grid editor (pick a brush, tap cells to
+  paint; tap again to clear) with adjustable meter + subdivision
+  (quarter/eighth/triplet/sixteenth) and a live preview.
 - `RhythmChart`: compact, self-contained **placeable box** (stroke glyphs over a
   beat ruler, bar/beat lines, label) — the reusable unit for the read view,
   performance views, and (Phase 8) drag-drop onto reports.
@@ -180,6 +181,17 @@ CRUD; Settings (theme, accent, backup). Placeholder pages for Setlists/Reports.
   per section in `SongView` and the Scroll performance view.
 - `useRhythmPatterns` / `useRhythmPattern` / `useRhythmPatternsByIds` + CRUD in
   `db/repo.ts`.
+
+### Phase 7B — User-defined rhythm symbols ✅
+- New `RhythmSymbol` entity + `rhythmSymbols` table (Dexie **v2**, additive
+  migration; added to JSON export/import + ttn-backup payload).
+- A `StrumStep` may now carry a `customId` referencing a user symbol; built-in
+  strokes stay hardcoded and valid. `resolveCell()` renders either, with a
+  placeholder fallback if a symbol was deleted (+ tests).
+- Admin section in Settings (`RhythmSymbolSettings`): add/edit/delete symbols
+  (e.g. continue `/`, quick stop `!`); built-ins listed read-only for reference.
+- Custom symbols appear as **brushes** in the pattern editor and render in
+  `RhythmChart` everywhere (read view, performance, settings) via the symbol map.
 
 ### Phase 8 — Report generator (PDF) — multi-page required
 - Page-oriented editor: pages → blocks (song, chordChart, image, logo, rhythm,

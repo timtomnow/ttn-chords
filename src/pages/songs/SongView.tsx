@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Minus, Pencil, Play, Plus } from 'lucide-react';
-import { useRhythmPatternsByIds, useSong } from '@/db/repo';
+import { useRhythmPatternsByIds, useRhythmSymbolMap, useSong } from '@/db/repo';
 import { ChordLine } from '@/components/chords/ChordLine';
 import { ChordChart } from '@/components/chords/ChordChart';
 import { ChordPopover } from '@/components/chords/ChordPopover';
@@ -51,6 +51,7 @@ function View({ song }: { song: Song }) {
     [song.sections],
   );
   const patterns = useRhythmPatternsByIds(patternIds);
+  const symbolMap = useRhythmSymbolMap();
 
   const shownKey = song.key
     ? transposeChordSymbol(song.key, transpose, flats)
@@ -145,7 +146,7 @@ function View({ song }: { song: Song }) {
               </h3>
               {pattern && (
                 <div className="mb-3 overflow-x-auto">
-                  <RhythmChart pattern={pattern} size="sm" />
+                  <RhythmChart pattern={pattern} symbols={symbolMap} size="sm" />
                 </div>
               )}
               <div className="space-y-2">

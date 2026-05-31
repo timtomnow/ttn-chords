@@ -7,7 +7,13 @@
 // is deliberately a strict subset of a future per-string notation layer: a
 // StrumStep can later carry per-string actions without changing existing data.
 
-import type { RhythmPattern, StrumStep, StrumStroke, TimeSignature } from '@/types';
+import type {
+  RhythmPattern,
+  RhythmSymbol,
+  StrumStep,
+  StrumStroke,
+  TimeSignature,
+} from '@/types';
 import { newId } from '@/lib/id';
 
 export const DEFAULT_TIME_SIGNATURE: TimeSignature = { beats: 4, unit: 4 };
@@ -65,6 +71,50 @@ export const STROKE_META: Record<StrumStroke, StrokeMeta> = {
 /** True for strokes that should render with an accent mark. */
 export function isAccented(step: StrumStep): boolean {
   return step.stroke === 'accent' || step.accent === true;
+}
+
+/**
+ * Resolve how a step should display, accounting for user-defined symbols
+ * (Phase 7B). A step with a `customId` that matches a known RhythmSymbol shows
+ * that symbol; otherwise it falls back to its built-in stroke. Pass the custom
+ * symbols (e.g. from useRhythmSymbols) as a Map for O(1) lookup.
+ */
+export type ResolvedCell = {
+  symbol: string;
+  label: string;
+  /** A built-in up-strum renders lighter; customs render normally. */
+  isUp: boolean;
+  accent: boolean;
+  /** True when the cell is empty (built-in rest, no custom). */
+  empty: boolean;
+};
+
+export function resolveCell(
+  step: StrumStep,
+  customs?: Map<string, RhythmSymbol>,
+): ResolvedCell {
+  if (step.customId) {
+    const sym = customs?.get(step.customId);
+    if (sym) {
+      return {
+        symbol: sym.symbol,
+        label: sym.name,
+        isUp: false,
+        accent: step.accent === true,
+        empty: false,
+      };
+    }
+    // Custom symbol was deleted: show a neutral placeholder rather than nothing.
+    return { symbol: '·', label: 'Removed symbol', isUp: false, accent: false, empty: false };
+  }
+  const meta = STROKE_META[step.stroke];
+  return {
+    symbol: meta.symbol,
+    label: meta.label,
+    isUp: step.stroke === 'up',
+    accent: isAccented(step),
+    empty: step.stroke === 'rest',
+  };
 }
 
 export function makePattern(

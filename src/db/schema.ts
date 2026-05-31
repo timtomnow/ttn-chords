@@ -6,17 +6,19 @@ import type {
   Photo,
   ReportTemplate,
   RhythmPattern,
+  RhythmSymbol,
   Setlist,
   Song,
 } from '@/types';
 
 /** Bumped whenever the on-disk shape changes. Written into JSON exports. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export class TtnChordsDB extends Dexie {
   songs!: Table<Song, string>;
   setlists!: Table<Setlist, string>;
   rhythmPatterns!: Table<RhythmPattern, string>;
+  rhythmSymbols!: Table<RhythmSymbol, string>;
   instruments!: Table<Instrument, string>;
   chordDefinitions!: Table<ChordDefinition, string>;
   reportTemplates!: Table<ReportTemplate, string>;
@@ -37,6 +39,11 @@ export class TtnChordsDB extends Dexie {
       reportTemplates: 'id, name, createdAt, updatedAt',
       photos: 'id, createdAt',
       settings: 'id',
+    });
+    // v2: user-defined rhythm symbols (Phase 7B). Additive — no migration of
+    // existing rows needed; the new table just starts empty.
+    this.version(2).stores({
+      rhythmSymbols: 'id, name, createdAt',
     });
   }
 }

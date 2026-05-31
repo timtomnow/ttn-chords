@@ -103,10 +103,31 @@ export type Section = {
 
 export type StrumStroke = 'down' | 'up' | 'mute' | 'accent' | 'tap' | 'rest';
 
-/** One cell in a strum grid. */
+/**
+ * One cell in a strum grid. A cell is either a built-in `stroke` OR a
+ * user-defined symbol referenced by `customId` (see RhythmSymbol). When
+ * `customId` is set it takes precedence over `stroke` for display; `stroke`
+ * is left as 'rest' in that case. This keeps older data (stroke-only) valid.
+ */
 export type StrumStep = {
   stroke: StrumStroke;
   accent?: boolean;
+  customId?: string;
+};
+
+/**
+ * A user-defined rhythm symbol, addable in Settings (e.g. a "continue" slash
+ * `/` or a "quick stop" `!`). Built-in strokes stay hardcoded; these extend the
+ * palette. Stored in its own table so it travels with ttn-backup.
+ */
+export type RhythmSymbol = {
+  id: string;
+  /** Human name, e.g. "Continue", "Quick stop". */
+  name: string;
+  /** Glyph(s) drawn in the grid, e.g. "/", "!". Kept short. */
+  symbol: string;
+  createdAt: number;
+  updatedAt: number;
 };
 
 /**

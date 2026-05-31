@@ -6,11 +6,12 @@ import { useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { RhythmChart } from '@/components/rhythm/RhythmChart';
 import { RhythmPatternEditor } from '@/components/rhythm/RhythmPatternEditor';
-import { deleteRhythmPattern, useRhythmPatterns } from '@/db/repo';
+import { deleteRhythmPattern, useRhythmPatterns, useRhythmSymbolMap } from '@/db/repo';
 import type { RhythmPattern } from '@/types';
 
 export function RhythmSettings() {
   const patterns = useRhythmPatterns();
+  const symbolMap = useRhythmSymbolMap();
   const [editing, setEditing] = useState<RhythmPattern | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -28,7 +29,7 @@ export function RhythmSettings() {
           {patterns.map((p) => (
             <div key={p.id} className="card flex items-center justify-between gap-3 p-3">
               <div className="min-w-0 overflow-x-auto">
-                <RhythmChart pattern={p} size="sm" />
+                <RhythmChart pattern={p} symbols={symbolMap} size="sm" />
               </div>
               <div className="flex shrink-0 gap-1">
                 <button className="btn-ghost p-1.5" onClick={() => setEditing(p)} aria-label="Edit">
