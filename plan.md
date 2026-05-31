@@ -96,29 +96,32 @@ nav); light/dark theme; accent-color system; ttn-backup adapter; JSON
 export/import; full `types.ts` data model; Dexie schema v1; minimal live Songs
 CRUD; Settings (theme, accent, backup). Placeholder pages for Setlists/Reports.
 
-### Phase 1 — Chord & music foundation
-- `src/lib/music.ts`: note/pitch-class utilities, **transpose**, capo math,
-  enharmonic handling, chord-symbol parsing (root, quality, bass).
-- `src/lib/chords/`: bundled chord library data for guitar, ukulele, bass
-  (root-note shapes), piano; the `Instrument` defaults; a typed accessor that
-  merges bundled + user `ChordDefinition`s.
-- Unit tests for transpose + chord parsing.
+### Phase 1 — Chord & music foundation ✅
+- `src/lib/music.ts`: pitch-class utilities, **transpose** (key-aware
+  enharmonics), capo math, chord-symbol parsing (root/quality/slash-bass),
+  chord-tone spelling.
+- `src/lib/chords/`: bundled guitar + ukulele shapes; computed bass root-note &
+  piano diagrams; builtin instruments; `resolveChord()` (user → bundled →
+  computed → null). User instruments/charts via `db/repo.ts`.
+- Tests: `music.test.ts`, `chords/chords.test.ts`.
 
-### Phase 2 — ChordPro engine
-- `src/lib/chordpro.ts`: parse ChordPro text → `Section[]`/`Line[]`/`ChordEvent[]`
-  and serialize back. Handle directives (`{title}`, `{start_of_chorus}`, …),
-  inline `[Chord]` anchors (→ `charIndex`).
-- Define + implement the **beat-timing extension** syntax (a directive or
-  inline annotation, e.g. `[G@1.5]` or a `{beats: ...}` line) → `ChordEvent.beat`.
-  Document the syntax in this file when finalized.
-- Round-trip tests (parse → serialize → parse is stable).
+### Phase 2 — ChordPro engine ✅
+- `src/lib/chordpro.ts`: parse ChordPro → `Section[]`/`Line[]`/`ChordEvent[]`
+  and serialize back. Metadata + section directives + inline `[Chord]` anchors.
+- **Beat-timing extension implemented** — see "ChordPro beat syntax" below.
+- Round-trip tests in `chordpro.test.ts` (parse → serialize → parse stable).
 
-### Phase 3 — Song editor
-- Full song metadata form (title, artist, key, capo, tempo, time signature, tags).
-- Section editor: add/remove/reorder (dnd-kit), choose kind/label, repeat.
-- Line editor with chord placement (tap a position to drop a chord; optional
-  beat assignment). Mobile-friendly + desktop keyboard flow.
-- Live ChordPro import/paste into the editor as a draft.
+### Phase 3 — Song editor ✅
+- Metadata form (title, artist, key, capo, tempo, time signature, tags) with
+  debounced autosave + "Saved" indicator.
+- Section editor: add/remove/reorder (dnd-kit), kind/label per section.
+- Per-section ChordPro body editing with a **live chords-over-lyrics preview**
+  (`ChordLine`, shared with the future read view/reports). One responsive
+  layout (stacked on mobile, side-by-side on desktop).
+- ChordPro import/paste → new draft song (`SongList` import modal).
+- **Deferred to later polish:** tap-to-place visual chord insertion and a
+  per-event beat-assignment UI (the data + text syntax already support both;
+  this is an editor affordance, see Phase 11 / parking lot).
 
 ### Phase 4 — Chord charts
 - SVG renderers: `FretboardChart` (tuning-driven) and `KeyboardChart`.
@@ -172,8 +175,27 @@ CRUD; Settings (theme, accent, backup). Placeholder pages for Setlists/Reports.
 - Tailwind classes only (dynamic positioning is the rare `style={{}}` exception).
 - One responsive layout for mobile + desktop; never two parallel UIs.
 
+## ChordPro beat syntax (finalized in Phase 2)
+
+Our one extension to ChordPro is an optional `@beat` suffix inside a chord
+bracket, giving an exact metric onset measured in **quarter-note beats from the
+start of the section**:
+
+- `[G@2]` — chord G at beat 2 (integer).
+- `[C@1.5]` — decimal; snapped to an exact rational (1/16 + triplet denominators
+  supported), so it round-trips losslessly.
+- `[Am@3/2]` — explicit fraction.
+- `[@2]` — empty chord = a rhythm-only onset (a strum/hit, no chord change).
+
+The display anchor (`charIndex`, where the chord sits above the lyric) and the
+metric onset (`beat`) are independent. Standard ChordPro without `@` parses
+exactly as before. This maps to `ChordEvent.beat: { n, d }` and is a strict
+subset of a future full-notation model (add `duration` later — additive only).
+
 ## 6. Open questions / parking lot
 - PDF engine (Phase 8).
-- Exact ChordPro beat-timing extension syntax (Phase 2).
+- Editor affordances: tap-to-place chords and a visual per-event beat picker
+  (syntax + storage already done in Phases 2–3; this is UI sugar).
 - Audio playback / click track off the timing layer? (future)
-- Chord-chart auto-generation from a chord symbol when no diagram exists (future).
+- Chord-chart auto-generation from a chord symbol when no diagram exists
+  (already done for bass/piano via computed shapes; consider for guitar/uke).

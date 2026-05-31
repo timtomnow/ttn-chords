@@ -20,8 +20,13 @@ export function useSongs(): Song[] | undefined {
   return useLiveQuery(() => db.songs.orderBy('order').toArray());
 }
 
-export function useSong(id: string | undefined): Song | undefined {
-  return useLiveQuery(() => (id ? db.songs.get(id) : undefined), [id]);
+// Returns undefined while the query is in flight, null when the id resolves to
+// no row (so the editor can tell "loading" apart from "not found").
+export function useSong(id: string | undefined): Song | null | undefined {
+  return useLiveQuery(
+    async () => (id ? ((await db.songs.get(id)) ?? null) : null),
+    [id],
+  );
 }
 
 export async function createSong(
