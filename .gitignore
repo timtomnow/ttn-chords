@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+dist-ssr/
+build/
+*.local
+
+# PWA generated files
+dev-dist/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Env
+.env
+.env.*.local
+.env.local
+
+# TypeScript
+*.tsbuildinfo
+
+# Test
+coverage/
