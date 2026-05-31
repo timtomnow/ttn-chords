@@ -17,6 +17,7 @@ import {
   PanelRight,
   Plus,
   Printer,
+  Scissors,
   Trash2,
   ZoomIn,
   ZoomOut,
@@ -49,11 +50,19 @@ import {
   pageGeometry,
   pxToFloating,
 } from '@/lib/report/geometry';
+import { paginate } from '@/lib/report/paginate';
+import {
+  bandHasContent,
+  footerForPage,
+  headerForPage,
+  type TokenContext,
+} from '@/lib/report/tokens';
 import { getBlock, listBlocks } from '@/lib/report/registry';
 import '@/lib/report/blocks'; // register built-in blocks
-import { PageFrame } from '@/components/report/PageFrame';
+import { PageFrame, usableContentHeight } from '@/components/report/PageFrame';
 import { RenderBlock } from '@/components/report/RenderBlock';
 import { ScaleBox } from '@/components/report/ScaleBox';
+import { useBlockHeights } from '@/components/report/useBlockHeights';
 import type {
   BlockPlacement,
   Orientation,
@@ -88,6 +97,9 @@ export function ReportEditor() {
 }
 
 type Sel = { pageId: string; blockId: string } | null;
+
+/** How to split an overflowing block when the user severs it. */
+type SeverSplit = { type: 'sections'; keep: string[]; rest: string[] } | { type: 'whole' };
 
 function Editor({ template }: { template: ReportTemplate }) {
   const navigate = useNavigate();
@@ -211,6 +223,47 @@ function Editor({ template }: { template: ReportTemplate }) {
       return { ...p, blocks: [...arrayMove(flow, from, to), ...floating] };
     });
   }
+  // Split an overflowing block onto a NEW page right after this one, so the
+  // remainder can be laid out independently. `split` is computed by the page
+  // (it measured the DOM): a song splits by section ids; anything else moves
+  // whole. The moved part becomes its own block on the new page.
+  function severBlock(pageId: string, blockId: string, split: SeverSplit) {
+    const movedId = newId();
+    const newPageId = newId();
+    setPages((prev) => {
+      const pi = prev.findIndex((p) => p.id === pageId);
+      if (pi < 0) return prev;
+      const page = prev[pi];
+      const block = page.blocks.find((b) => b.id === blockId);
+      if (!block) return prev;
+
+      let updatedPage: ReportPage;
+      let moved: ReportBlock;
+      if (split.type === 'sections') {
+        updatedPage = {
+          ...page,
+          blocks: page.blocks.map((b) =>
+            b.id === blockId ? { ...b, config: { ...b.config, sectionIds: split.keep } } : b,
+          ),
+        };
+        moved = {
+          ...block,
+          id: movedId,
+          placement: { mode: 'flow' },
+          config: { ...block.config, sectionIds: split.rest },
+        };
+      } else {
+        updatedPage = { ...page, blocks: page.blocks.filter((b) => b.id !== blockId) };
+        moved = { ...block, id: movedId, placement: { mode: 'flow' }, config: { ...block.config } };
+      }
+      const next = [...prev];
+      next[pi] = updatedPage;
+      next.splice(pi + 1, 0, { id: newPageId, blocks: [moved] });
+      return next;
+    });
+    setActivePageId(newPageId);
+    setSel({ pageId: newPageId, blockId: movedId });
+  }
   function addPage() {
     const page: ReportPage = { id: newId(), blocks: [] };
     setPages((prev) => [...prev, page]);
@@ -316,6 +369,7 @@ function Editor({ template }: { template: ReportTemplate }) {
                 onDeselect={() => setSel(null)}
                 onPlacement={(blockId, placement) => patchBlock(page.id, blockId, { placement })}
                 onReorderFlow={(a, b) => reorderFlow(page.id, a, b)}
+                onSever={(blockId, split) => severBlock(page.id, blockId, split)}
               />
             ))}
             <button className="btn-secondary" onClick={addPage}>
@@ -390,6 +444,7 @@ function EditPage({
   onDeselect,
   onPlacement,
   onReorderFlow,
+  onSever,
 }: {
   template: ReportTemplate;
   page: ReportPage;
@@ -407,89 +462,121 @@ function EditPage({
   onDeselect: () => void;
   onPlacement: (blockId: string, placement: BlockPlacement) => void;
   onReorderFlow: (activeId: string, overId: string) => void;
+  onSever: (blockId: string, split: SeverSplit) => void;
 }) {
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [sheets, setSheets] = useState(1);
+  const flowBlocks = page.blocks.filter((b) => b.placement.mode === 'flow');
+  const floatingBlocks = page.blocks.filter((b) => b.placement.mode === 'floating');
+  const byId = useMemo(() => new Map(flowBlocks.map((b) => [b.id, b])), [flowBlocks]);
 
-  // How many physical sheets the page's content currently spans (for the label).
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() =>
-      setSheets(Math.max(1, Math.ceil(el.offsetHeight / geo.contentHeightPx - 0.02))),
-    );
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [geo.contentHeightPx]);
+  const headerBand = headerForPage(template.chrome, pageIndex);
+  const footerBand = footerForPage(template.chrome, pageIndex);
+  const header = bandHasContent(headerBand) ? headerBand : undefined;
+  const footer = bandHasContent(footerBand) ? footerBand : undefined;
+  const usable = usableContentHeight(geo, !!header, !!footer);
+  const ctx: TokenContext = {
+    page: pageIndex + 1,
+    pages: template.pages.length,
+    title: template.name,
+    date,
+  };
 
-  const flow = page.blocks.filter((b) => b.placement.mode === 'flow');
-  const floating = page.blocks.filter((b) => b.placement.mode === 'floating');
+  const { measureLayer, heights } = useBlockHeights(flowBlocks, 'screen', geo.contentWidthPx);
+  const sheets = useMemo(
+    () => paginate(flowBlocks.map((b) => ({ id: b.id, height: heights[b.id] ?? 0 })), usable, 12),
+    [flowBlocks, heights, usable],
+  );
 
   function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
     if (over && active.id !== over.id) onReorderFlow(String(active.id), String(over.id));
   }
 
-  const flowNode = (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <SortableContext items={flow.map((b) => b.id)} strategy={verticalListSortingStrategy}>
-        {flow.map((b) => (
-          <FlowItem key={b.id} block={b} zoom={zoom} selected={sel?.blockId === b.id} onSelect={() => onSelect(b.id)} />
-        ))}
-      </SortableContext>
-      {flow.length === 0 && (
-        <p className="py-8 text-center text-xs text-ink-300 dark:text-ink-600">Add blocks from the panel →</p>
-      )}
-    </DndContext>
-  );
-
-  const floatingNode = floating.map((b) =>
-    b.placement.mode === 'floating' ? (
-      <FloatingItem
-        key={b.id}
-        block={b}
-        geo={geo}
-        zoom={zoom}
-        selected={sel?.blockId === b.id}
-        onSelect={() => onSelect(b.id)}
-        onChange={(placement) => onPlacement(b.id, placement)}
-      />
-    ) : null,
-  );
-
   return (
-    <div style={{ width: geo.widthPx * zoom }}>
-      <div className="mb-1 flex items-center justify-between px-1 text-xs text-ink-500">
-        <button className={isActive ? 'font-semibold text-accent' : ''} onClick={onActivate}>
-          Page {pageIndex + 1}
-          {isActive ? ' · active' : ''}
-          {sheets > 1 ? ` · ${sheets} sheets` : ''}
-        </button>
-        {canDelete && (
-          <button className="btn-ghost px-1 py-0.5" onClick={onDeletePage}>
-            <Trash2 size={13} />
-          </button>
-        )}
-      </div>
-      <PageScaler zoom={zoom} width={geo.widthPx}>
-        <div
-          className="shadow-lg ring-1 ring-ink-300 dark:ring-ink-700"
-          onClick={() => {
-            onActivate();
-            onDeselect();
-          }}
-        >
-          <PageFrame
-            template={template}
-            geo={geo}
-            pageIndex={pageIndex}
-            date={date}
-            contentRef={contentRef}
-            flow={flowNode}
-            floating={floatingNode}
-          />
-        </div>
-      </PageScaler>
+    <div>
+      {measureLayer}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <SortableContext items={flowBlocks.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+          <div className="flex flex-col items-center gap-4">
+            {sheets.map((sheet, si) => {
+              const overflow = new Set(sheet.overflowIds);
+              return (
+                <div key={si} style={{ width: geo.widthPx * zoom }}>
+                  <div className="mb-1 flex items-center justify-between px-1 text-xs text-ink-500">
+                    <button
+                      className={isActive && si === 0 ? 'font-semibold text-accent' : ''}
+                      onClick={onActivate}
+                    >
+                      Page {pageIndex + 1}
+                      {sheets.length > 1 ? ` · sheet ${si + 1}/${sheets.length}` : ''}
+                      {isActive && si === 0 ? ' · active' : ''}
+                    </button>
+                    {si === 0 && canDelete && (
+                      <button className="btn-ghost px-1 py-0.5" onClick={onDeletePage}>
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                  <PageScaler zoom={zoom} width={geo.widthPx}>
+                    <div
+                      onClick={() => {
+                        onActivate();
+                        onDeselect();
+                      }}
+                    >
+                      <PageFrame
+                        geo={geo}
+                        header={header}
+                        footer={footer}
+                        ctx={ctx}
+                        flow={
+                          sheet.ids.length === 0 && si === 0 ? (
+                            <p className="py-8 text-center text-xs text-ink-300 dark:text-ink-600">
+                              Add blocks from the panel →
+                            </p>
+                          ) : (
+                            sheet.ids.map((id) => {
+                              const b = byId.get(id);
+                              return b ? (
+                                <FlowItem
+                                  key={id}
+                                  block={b}
+                                  zoom={zoom}
+                                  selected={sel?.blockId === id}
+                                  overflow={overflow.has(id)}
+                                  usable={usable}
+                                  onSelect={() => onSelect(id)}
+                                  onSever={(split) => onSever(id, split)}
+                                />
+                              ) : null;
+                            })
+                          )
+                        }
+                        floating={
+                          si === 0
+                            ? floatingBlocks.map((b) =>
+                                b.placement.mode === 'floating' ? (
+                                  <FloatingItem
+                                    key={b.id}
+                                    block={b}
+                                    geo={geo}
+                                    zoom={zoom}
+                                    selected={sel?.blockId === b.id}
+                                    onSelect={() => onSelect(b.id)}
+                                    onChange={(placement) => onPlacement(b.id, placement)}
+                                  />
+                                ) : null,
+                              )
+                            : null
+                        }
+                      />
+                    </div>
+                  </PageScaler>
+                </div>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }
@@ -498,28 +585,55 @@ function FlowItem({
   block,
   zoom,
   selected,
+  overflow,
+  usable,
   onSelect,
+  onSever,
 }: {
   block: ReportBlock;
   zoom: number;
   selected: boolean;
+  overflow: boolean;
+  usable: number;
   onSelect: () => void;
+  onSever: (split: SeverSplit) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
   });
+  const contentRef = useRef<HTMLDivElement>(null);
   // The page is CSS-scaled by `zoom`; divide dnd-kit's translate by zoom so the
   // dragged block tracks the pointer.
   const t = transform ? { ...transform, x: transform.x / zoom, y: transform.y / zoom } : transform;
+
+  // Decide where to cut an overflowing block: a song splits after the last
+  // section that fits this sheet; anything else moves whole.
+  function sever() {
+    const el = contentRef.current;
+    if (block.type !== 'song' || !el) return onSever({ type: 'whole' });
+    const secs = Array.from(el.querySelectorAll<HTMLElement>('[data-section-id]'));
+    if (secs.length <= 1) return onSever({ type: 'whole' });
+    const top = el.getBoundingClientRect().top;
+    const keep: string[] = [];
+    for (const s of secs) {
+      const bottom = (s.getBoundingClientRect().bottom - top) / zoom;
+      if (bottom <= usable || keep.length === 0) keep.push(s.dataset.sectionId!);
+      else break;
+    }
+    const rest = secs.map((s) => s.dataset.sectionId!).filter((id) => !keep.includes(id));
+    onSever(rest.length ? { type: 'sections', keep, rest } : { type: 'whole' });
+  }
+
   return (
     <div
       ref={setNodeRef}
+      data-block-id={block.id}
       style={{ transform: CSS.Transform.toString(t), transition, opacity: isDragging ? 0.5 : 1 }}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
       }}
-      className={`group relative rounded p-1 transition ${
+      className={`group relative rounded transition ${
         selected ? 'ring-2 ring-accent' : 'ring-1 ring-transparent hover:ring-ink-200 dark:hover:ring-ink-700'
       }`}
     >
@@ -533,9 +647,23 @@ function FlowItem({
       >
         <GripVertical size={16} />
       </button>
-      <ScaleBox scale={block.scale ?? 1}>
-        <RenderBlock block={block} mode="screen" />
-      </ScaleBox>
+      {overflow && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            sever();
+          }}
+          className="absolute right-1 top-1 z-20 inline-flex items-center gap-1 rounded bg-accent px-1.5 py-0.5 text-[11px] font-medium text-accent-fg shadow"
+          title="Move the part that doesn't fit onto a new page"
+        >
+          <Scissors size={12} /> Sever to new page
+        </button>
+      )}
+      <div ref={contentRef}>
+        <ScaleBox scale={block.scale ?? 1}>
+          <RenderBlock block={block} mode="screen" />
+        </ScaleBox>
+      </div>
     </div>
   );
 }

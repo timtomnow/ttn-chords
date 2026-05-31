@@ -47,11 +47,12 @@ export function ReportPrint() {
         </button>
       </div>
 
+      {/* Sheets render as direct siblings here (ReportPageSurface returns a
+          fragment of .report-paper sheets) so the print break rules and the
+          last-sheet detection work across the whole document. */}
       <div className="flex flex-col items-center gap-6 py-6 print:gap-0 print:py-0">
         {template.pages.map((page, i) => (
-          <div key={page.id} className="shadow-lg print:shadow-none">
-            <ReportPageSurface template={template} page={page} pageIndex={i} date={date} />
-          </div>
+          <ReportPageSurface key={page.id} template={template} page={page} pageIndex={i} date={date} />
         ))}
       </div>
     </div>

@@ -1,55 +1,47 @@
-// The shared page shell used by BOTH the editor canvas and the print view, so
-// geometry / margins / header-footer bands never drift between them.
-//
-// Layout model (see plan.md §Phase 8): the visible "paper" carries the page
-// margin as padding on screen; in print the margin comes from the `@page` rule
-// (which repeats on every physical sheet) and this padding is removed. The inner
-// `.report-page` is the content box (printable area) — it has `min-height` and
-// never clips, so a long flow column spills onto continuation sheets cleanly.
-// Callers supply the already-rendered flow and floating nodes (the editor wraps
-// them with dnd-kit / react-rnd; print uses plain renderers).
+// One physical sheet: the "paper" (carrying the page margin as padding on
+// screen; in print the margin comes from `@page` and this padding is removed)
+// wrapping the content box, with header/footer bands and the flow + floating
+// slots. Callers (editor + print) paginate an explicit page into a stack of
+// these, so geometry/margins/bands never drift between the two.
 
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { pageGeometry, type PageGeometry } from '@/lib/report/geometry';
-import { footerForPage, headerForPage, type TokenContext } from '@/lib/report/tokens';
-import type { ReportTemplate } from '@/types';
+import type { TokenContext } from '@/lib/report/tokens';
+import type { ReportBand } from '@/types';
 import { BAND_HEIGHT, PageFooterBand, PageHeaderBand } from './PageBands';
 
 const BAND_SPACE = BAND_HEIGHT + 10;
 
-export function pageTokenContext(
-  template: ReportTemplate,
-  pageIndex: number,
-  date: string,
-): TokenContext {
-  return { page: pageIndex + 1, pages: template.pages.length, title: template.name, date };
+/** Flow height available on a sheet after reserving header/footer band space. */
+export function usableContentHeight(
+  geo: PageGeometry,
+  hasHeader: boolean,
+  hasFooter: boolean,
+): number {
+  return geo.contentHeightPx - (hasHeader ? BAND_SPACE : 0) - (hasFooter ? BAND_SPACE : 0);
 }
 
 export function PageFrame({
-  template,
   geo,
-  pageIndex,
-  date,
+  header,
+  footer,
+  ctx,
   flow,
   floating,
   contentRef,
 }: {
-  template: ReportTemplate;
   geo: PageGeometry;
-  pageIndex: number;
-  date: string;
+  header?: ReportBand;
+  footer?: ReportBand;
+  ctx: TokenContext;
   flow: ReactNode;
   floating?: ReactNode;
   /** Optional ref to the content box (the editor needs it for hit-testing). */
-  contentRef?: React.Ref<HTMLDivElement>;
+  contentRef?: Ref<HTMLDivElement>;
 }) {
-  const ctx = pageTokenContext(template, pageIndex, date);
-  const header = headerForPage(template.chrome, pageIndex);
-  const footer = footerForPage(template.chrome, pageIndex);
-
   return (
     <div
-      className="report-paper bg-white text-ink-900"
+      className="report-paper bg-white text-ink-900 shadow-lg print:shadow-none"
       style={{ width: geo.widthPx, padding: geo.marginPx }}
     >
       <div

@@ -254,10 +254,19 @@ blocks and print engine kept):
 - **Shared `PageFrame`** renders the page shell for both the editor and print, so
   geometry/margins/bands can't drift. The page model is now a "paper" wrapper
   (visual margin) around a content-box `.report-page`.
-- **Clean multi-page spill:** print uses real `@page { margin }` (repeats on every
-  physical sheet) instead of div padding; song lines get line-level
-  `break-inside: avoid` so chords never separate from lyrics across a sheet. The
-  editor shows a "· N sheets" hint when a page's content spans more than one.
+- **Discrete measured sheets (pagination engine):** the editor AND the `/print`
+  preview render each explicit page as a stack of real physical **sheets**, each
+  with correct margins and repeating header/footer bands. `useBlockHeights`
+  measures flow blocks in a hidden, content-width measure layer; the pure
+  `paginate()` (`src/lib/report/paginate.ts`, unit-tested) packs whole blocks onto
+  sheets, never splitting a block across a sheet (matches print's
+  `break-inside: avoid`). This is what makes the preview margin-accurate and the
+  break positions exact — superseding the earlier continuous-spill guides.
+- **Sever:** a block taller than one sheet shows a "✂ Sever to new page" button.
+  Severing splits it onto a NEW explicit page so the remainder can be laid out
+  independently: a **song** splits at the last section that fits (reusing
+  `sectionIds`), anything else moves whole. Print still uses `@page { margin }`
+  as the safety net for any un-severed overflow.
 - **Input/sizing fixes:** the chord-chart field stores raw text (typing commas
   works); image blocks carry an explicit floating height; print container
   hardened (no more `position:absolute` clipping).

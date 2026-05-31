@@ -126,7 +126,7 @@ function Render({ block, mode }: BlockRenderProps) {
             ? patterns?.get(section.rhythmPatternId)
             : undefined;
           return (
-            <section key={section.id}>
+            <section key={section.id} data-section-id={section.id} className="break-inside-avoid">
               <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-accent [break-after:avoid]">
                 {section.label || defaultLabelForKind(section.kind)}
               </h3>
