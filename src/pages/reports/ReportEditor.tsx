@@ -1,12 +1,11 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
-  type RefObject,
 } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -37,18 +36,24 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Rnd } from 'react-rnd';
 import {
   deleteReportTemplate,
   updateReportTemplate,
   useReportTemplate,
 } from '@/db/repo';
 import { newId } from '@/lib/id';
-import { floatingStyle, pageGeometry } from '@/lib/report/geometry';
-import { footerForPage, headerForPage, type TokenContext } from '@/lib/report/tokens';
+import {
+  DEFAULT_FLOAT_H,
+  floatingToPx,
+  pageGeometry,
+  pxToFloating,
+} from '@/lib/report/geometry';
 import { getBlock, listBlocks } from '@/lib/report/registry';
 import '@/lib/report/blocks'; // register built-in blocks
+import { PageFrame } from '@/components/report/PageFrame';
 import { RenderBlock } from '@/components/report/RenderBlock';
-import { PageFooterBand, PageHeaderBand } from '@/components/report/PageBands';
+import { ScaleBox } from '@/components/report/ScaleBox';
 import type {
   BlockPlacement,
   Orientation,
@@ -94,7 +99,7 @@ function Editor({ template }: { template: ReportTemplate }) {
   const [saved, setSaved] = useState(true);
   const [sel, setSel] = useState<Sel>(null);
   const [activePageId, setActivePageId] = useState(template.pages[0]?.id ?? '');
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(0.75);
   const [showInspector, setShowInspector] = useState(true);
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -102,19 +107,16 @@ function Editor({ template }: { template: ReportTemplate }) {
   const date = useMemo(() => new Date().toLocaleDateString(), []);
   const geo = useMemo(() => pageGeometry(pageSize, orientation), [pageSize, orientation]);
 
-  // Scale the page to fit the available canvas width (accounts for the sidebar
-  // and the inspector, whatever the screen size).
+  // Fit the page width to the available canvas (accounts for the sidebar + the
+  // inspector, at any screen size).
   const fit = useCallback(() => {
     const el = canvasRef.current;
     if (!el) return;
-    const avail = el.clientWidth - 32; // p-4 on both sides
-    setZoom(clamp(Number((avail / geo.widthPx).toFixed(2)), 0.25, 1.5));
+    setZoom(clamp(Number(((el.clientWidth - 32) / geo.widthPx).toFixed(2)), 0.25, 1.5));
   }, [geo.widthPx]);
-
-  // Auto-fit on mount and whenever the available width or sheet size changes.
-  useEffect(() => {
-    const id = requestAnimationFrame(fit);
-    return () => cancelAnimationFrame(id);
+  useLayoutEffect(() => {
+    const r = requestAnimationFrame(fit);
+    return () => cancelAnimationFrame(r);
   }, [fit, showInspector]);
   const stepZoom = (d: number) =>
     setZoom((z) => clamp(Number((z + d).toFixed(2)), 0.25, 2));
@@ -139,7 +141,10 @@ function Editor({ template }: { template: ReportTemplate }) {
     return () => clearTimeout(h);
   }, [name, pageSize, orientation, chrome, pages, template.id]);
 
-  // ── page/block mutations ──
+  // ── mutations ──
+  const updatePage = (pageId: string, fn: (p: ReportPage) => ReportPage) =>
+    setPages((prev) => prev.map((p) => (p.id === pageId ? fn(p) : p)));
+
   function addBlock(type: ReportBlockType) {
     const def = getBlock(type);
     if (!def) return;
@@ -149,59 +154,39 @@ function Editor({ template }: { template: ReportTemplate }) {
       placement: def.defaultPlacement,
       config: def.defaultConfig(),
     };
-    setPages((prev) =>
-      prev.map((p) => (p.id === activePageId ? { ...p, blocks: [...p.blocks, block] } : p)),
-    );
+    updatePage(activePageId, (p) => ({ ...p, blocks: [...p.blocks, block] }));
     setSel({ pageId: activePageId, blockId: block.id });
   }
-  function patchBlock(pageId: string, blockId: string, patch: Partial<ReportBlock>) {
-    setPages((prev) =>
-      prev.map((p) =>
-        p.id === pageId
-          ? { ...p, blocks: p.blocks.map((b) => (b.id === blockId ? { ...b, ...patch } : b)) }
-          : p,
+  const patchBlock = (pageId: string, blockId: string, patch: Partial<ReportBlock>) =>
+    updatePage(pageId, (p) => ({
+      ...p,
+      blocks: p.blocks.map((b) => (b.id === blockId ? { ...b, ...patch } : b)),
+    }));
+  const patchConfig = (pageId: string, blockId: string, cfg: Record<string, unknown>) =>
+    updatePage(pageId, (p) => ({
+      ...p,
+      blocks: p.blocks.map((b) =>
+        b.id === blockId ? { ...b, config: { ...b.config, ...cfg } } : b,
       ),
-    );
-  }
-  function patchConfig(pageId: string, blockId: string, cfg: Record<string, unknown>) {
-    setPages((prev) =>
-      prev.map((p) =>
-        p.id === pageId
-          ? {
-              ...p,
-              blocks: p.blocks.map((b) =>
-                b.id === blockId ? { ...b, config: { ...b.config, ...cfg } } : b,
-              ),
-            }
-          : p,
-      ),
-    );
-  }
+    }));
   function deleteBlock(pageId: string, blockId: string) {
-    setPages((prev) =>
-      prev.map((p) =>
-        p.id === pageId ? { ...p, blocks: p.blocks.filter((b) => b.id !== blockId) } : p,
-      ),
-    );
+    updatePage(pageId, (p) => ({ ...p, blocks: p.blocks.filter((b) => b.id !== blockId) }));
     setSel(null);
   }
   function duplicateBlock(pageId: string, blockId: string) {
-    setPages((prev) =>
-      prev.map((p) => {
-        if (p.id !== pageId) return p;
-        const src = p.blocks.find((b) => b.id === blockId);
-        if (!src) return p;
-        const copy: ReportBlock = { ...src, id: newId(), config: { ...src.config } };
-        if (src.placement.mode === 'floating') {
-          copy.placement = {
-            ...src.placement,
-            x: clamp(src.placement.x + 3, 0, 95),
-            y: clamp(src.placement.y + 3, 0, 95),
-          };
-        }
-        return { ...p, blocks: [...p.blocks, copy] };
-      }),
-    );
+    updatePage(pageId, (p) => {
+      const src = p.blocks.find((b) => b.id === blockId);
+      if (!src) return p;
+      const copy: ReportBlock = { ...src, id: newId(), config: { ...src.config } };
+      if (src.placement.mode === 'floating') {
+        copy.placement = {
+          ...src.placement,
+          x: clamp(src.placement.x + 3, 0, 90),
+          y: clamp(src.placement.y + 3, 0, 90),
+        };
+      }
+      return { ...p, blocks: [...p.blocks, copy] };
+    });
   }
   function moveBlockToPage(fromPageId: string, blockId: string, toPageId: string) {
     if (fromPageId === toPageId) return;
@@ -217,32 +202,26 @@ function Editor({ template }: { template: ReportTemplate }) {
     setSel({ pageId: toPageId, blockId });
   }
   function reorderFlow(pageId: string, activeId: string, overId: string) {
-    setPages((prev) =>
-      prev.map((p) => {
-        if (p.id !== pageId) return p;
-        const flow = p.blocks.filter((b) => b.placement.mode === 'flow');
-        const floating = p.blocks.filter((b) => b.placement.mode === 'floating');
-        const from = flow.findIndex((b) => b.id === activeId);
-        const to = flow.findIndex((b) => b.id === overId);
-        if (from < 0 || to < 0) return p;
-        return { ...p, blocks: [...arrayMove(flow, from, to), ...floating] };
-      }),
-    );
+    updatePage(pageId, (p) => {
+      const flow = p.blocks.filter((b) => b.placement.mode === 'flow');
+      const floating = p.blocks.filter((b) => b.placement.mode === 'floating');
+      const from = flow.findIndex((b) => b.id === activeId);
+      const to = flow.findIndex((b) => b.id === overId);
+      if (from < 0 || to < 0) return p;
+      return { ...p, blocks: [...arrayMove(flow, from, to), ...floating] };
+    });
   }
-
   function addPage() {
     const page: ReportPage = { id: newId(), blocks: [] };
     setPages((prev) => [...prev, page]);
     setActivePageId(page.id);
   }
   function deletePage(pageId: string) {
-    if (pages.length <= 1) return;
-    if (!confirm('Delete this page?')) return;
+    if (pages.length <= 1 || !confirm('Delete this page?')) return;
     setPages((prev) => prev.filter((p) => p.id !== pageId));
     if (activePageId === pageId) setActivePageId(pages.find((p) => p.id !== pageId)?.id ?? '');
     if (sel?.pageId === pageId) setSel(null);
   }
-
   async function onDelete() {
     if (!confirm('Delete this report?')) return;
     await deleteReportTemplate(template.id);
@@ -260,16 +239,8 @@ function Editor({ template }: { template: ReportTemplate }) {
         <button className="btn-ghost -ml-2" onClick={() => navigate('/reports')}>
           <ArrowLeft size={16} /> Reports
         </button>
-        <input
-          className="input max-w-xs flex-1"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <select
-          className="input w-auto"
-          value={pageSize}
-          onChange={(e) => setPageSize(e.target.value as PageSize)}
-        >
+        <input className="input max-w-xs flex-1" value={name} onChange={(e) => setName(e.target.value)} />
+        <select className="input w-auto" value={pageSize} onChange={(e) => setPageSize(e.target.value as PageSize)}>
           <option value="letter">Letter</option>
           <option value="a4">A4</option>
           <option value="legal">Legal</option>
@@ -292,16 +263,11 @@ function Editor({ template }: { template: ReportTemplate }) {
           )}
         </span>
 
-        {/* Zoom controls */}
         <div className="flex items-center gap-0.5 rounded-xl bg-ink-100 p-0.5 dark:bg-ink-800">
           <button className="btn-ghost px-2 py-1" onClick={() => stepZoom(-0.1)} title="Zoom out">
             <ZoomOut size={15} />
           </button>
-          <button
-            className="btn-ghost w-12 px-1 py-1 text-xs tabular-nums"
-            onClick={fit}
-            title="Fit to width"
-          >
+          <button className="btn-ghost w-12 px-1 py-1 text-xs tabular-nums" onClick={fit} title="Fit to width">
             {Math.round(zoom * 100)}%
           </button>
           <button className="btn-ghost px-2 py-1" onClick={() => stepZoom(0.1)} title="Zoom in">
@@ -319,62 +285,38 @@ function Editor({ template }: { template: ReportTemplate }) {
           <PanelRight size={16} />
         </button>
 
-        <button
-          className="btn-primary"
-          onClick={() => navigate(`/reports/${template.id}/print`)}
-        >
+        <button className="btn-primary" onClick={() => navigate(`/reports/${template.id}/print`)}>
           <Printer size={15} /> Print / PDF
         </button>
       </div>
 
       <div className="flex flex-col gap-4 lg:flex-row">
         {/* Canvas */}
-        <div
-          ref={canvasRef}
-          className="min-w-0 flex-1 overflow-auto rounded-2xl bg-ink-100 p-4 dark:bg-ink-950"
-        >
+        <div ref={canvasRef} className="min-w-0 flex-1 overflow-auto rounded-2xl bg-ink-100 p-4 dark:bg-ink-950">
           <div className="flex flex-col items-center gap-6">
             {pages.map((page, i) => (
-              <div key={page.id} className="space-y-1" style={{ width: geo.widthPx * zoom }}>
-                <div className="flex items-center justify-between px-1 text-xs text-ink-500">
-                  <button
-                    className={activePageId === page.id ? 'font-semibold text-accent' : ''}
-                    onClick={() => setActivePageId(page.id)}
-                  >
-                    Page {i + 1}
-                    {activePageId === page.id ? ' (active)' : ''}
-                  </button>
-                  {pages.length > 1 && (
-                    <button className="btn-ghost px-1 py-0.5" onClick={() => deletePage(page.id)}>
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </div>
-                <PageScaler zoom={zoom} width={geo.widthPx}>
-                  <EditPage
-                    template={draft}
-                    page={page}
-                    pageIndex={i}
-                    geo={geo}
-                    date={date}
-                    zoom={zoom}
-                    sel={sel}
-                    sensors={sensors}
-                    onSelect={(blockId) => {
-                      setActivePageId(page.id);
-                      setSel({ pageId: page.id, blockId });
-                    }}
-                    onSelectPage={() => {
-                      setActivePageId(page.id);
-                      setSel(null);
-                    }}
-                    onMoveFloating={(blockId, placement) =>
-                      patchBlock(page.id, blockId, { placement })
-                    }
-                    onReorderFlow={(a, b) => reorderFlow(page.id, a, b)}
-                  />
-                </PageScaler>
-              </div>
+              <EditPage
+                key={page.id}
+                template={draft}
+                page={page}
+                pageIndex={i}
+                geo={geo}
+                date={date}
+                zoom={zoom}
+                sel={sel}
+                sensors={sensors}
+                isActive={activePageId === page.id}
+                canDelete={pages.length > 1}
+                onActivate={() => setActivePageId(page.id)}
+                onDeletePage={() => deletePage(page.id)}
+                onSelect={(blockId) => {
+                  setActivePageId(page.id);
+                  setSel({ pageId: page.id, blockId });
+                }}
+                onDeselect={() => setSel(null)}
+                onPlacement={(blockId, placement) => patchBlock(page.id, blockId, { placement })}
+                onReorderFlow={(a, b) => reorderFlow(page.id, a, b)}
+              />
             ))}
             <button className="btn-secondary" onClick={addPage}>
               <Plus size={15} /> Add page
@@ -384,45 +326,39 @@ function Editor({ template }: { template: ReportTemplate }) {
 
         {/* Inspector */}
         {showInspector && (
-        <aside className="shrink-0 space-y-4 lg:w-80">
-          {selectedBlock && sel ? (
-            <BlockInspector
-              block={selectedBlock}
-              pages={pages}
-              pageId={sel.pageId}
-              onConfig={(cfg) => patchConfig(sel.pageId, sel.blockId, cfg)}
-              onScale={(scale) => patchBlock(sel.pageId, sel.blockId, { scale })}
-              onPlacement={(placement) => patchBlock(sel.pageId, sel.blockId, { placement })}
-              onMovePage={(toPage) => moveBlockToPage(sel.pageId, sel.blockId, toPage)}
-              onDuplicate={() => duplicateBlock(sel.pageId, sel.blockId)}
-              onDelete={() => deleteBlock(sel.pageId, sel.blockId)}
-              onDeselect={() => setSel(null)}
-            />
-          ) : (
-            <>
-              <section className="card p-4">
-                <h3 className="label mb-2">Add block to page {pageIndexOf(pages, activePageId) + 1}</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {listBlocks().map((def) => (
-                    <button
-                      key={def.type}
-                      className="btn-secondary justify-start"
-                      onClick={() => addBlock(def.type)}
-                    >
-                      <def.icon size={15} /> {def.label}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              <ChromeEditor chrome={chrome} onChange={setChrome} />
-
-              <button className="btn-danger w-full" onClick={onDelete}>
-                <Trash2 size={15} /> Delete report
-              </button>
-            </>
-          )}
-        </aside>
+          <aside className="shrink-0 space-y-4 lg:w-80">
+            {selectedBlock && sel ? (
+              <BlockInspector
+                block={selectedBlock}
+                pages={pages}
+                pageId={sel.pageId}
+                onConfig={(cfg) => patchConfig(sel.pageId, sel.blockId, cfg)}
+                onScale={(scale) => patchBlock(sel.pageId, sel.blockId, { scale })}
+                onPlacement={(placement) => patchBlock(sel.pageId, sel.blockId, { placement })}
+                onMovePage={(toPage) => moveBlockToPage(sel.pageId, sel.blockId, toPage)}
+                onDuplicate={() => duplicateBlock(sel.pageId, sel.blockId)}
+                onDelete={() => deleteBlock(sel.pageId, sel.blockId)}
+                onDeselect={() => setSel(null)}
+              />
+            ) : (
+              <>
+                <section className="card p-4">
+                  <h3 className="label mb-2">Add block to page {pageIndexOf(pages, activePageId) + 1}</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {listBlocks().map((def) => (
+                      <button key={def.type} className="btn-secondary justify-start" onClick={() => addBlock(def.type)}>
+                        <def.icon size={15} /> {def.label}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+                <ChromeEditor chrome={chrome} onChange={setChrome} />
+                <button className="btn-danger w-full" onClick={onDelete}>
+                  <Trash2 size={15} /> Delete report
+                </button>
+              </>
+            )}
+          </aside>
         )}
       </div>
     </div>
@@ -433,39 +369,8 @@ function pageIndexOf(pages: ReportPage[], id: string): number {
   return Math.max(0, pages.findIndex((p) => p.id === id));
 }
 
-// Reserves correctly-scaled layout space for a CSS-transformed page (transform
-// alone wouldn't shrink the box, leaving big gaps). Measures the unscaled child
-// height live and applies the zoom factor to the wrapper.
-function PageScaler({
-  zoom,
-  width,
-  children,
-}: {
-  zoom: number;
-  width: number;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setHeight(el.offsetHeight));
-    ro.observe(el);
-    setHeight(el.offsetHeight);
-    return () => ro.disconnect();
-  }, []);
-  return (
-    <div style={{ width: width * zoom, height: height * zoom }}>
-      <div ref={ref} style={{ width, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────
-// Interactive page surface (editor mirror of ReportPageSurface)
+// Interactive page (editor)
 // ─────────────────────────────────────────────────────────────────────────
 
 function EditPage({
@@ -477,9 +382,13 @@ function EditPage({
   zoom,
   sel,
   sensors,
+  isActive,
+  canDelete,
+  onActivate,
+  onDeletePage,
   onSelect,
-  onSelectPage,
-  onMoveFloating,
+  onDeselect,
+  onPlacement,
   onReorderFlow,
 }: {
   template: ReportTemplate;
@@ -490,20 +399,28 @@ function EditPage({
   zoom: number;
   sel: Sel;
   sensors: ReturnType<typeof useSensors>;
+  isActive: boolean;
+  canDelete: boolean;
+  onActivate: () => void;
+  onDeletePage: () => void;
   onSelect: (blockId: string) => void;
-  onSelectPage: () => void;
-  onMoveFloating: (blockId: string, placement: BlockPlacement) => void;
+  onDeselect: () => void;
+  onPlacement: (blockId: string, placement: BlockPlacement) => void;
   onReorderFlow: (activeId: string, overId: string) => void;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
-  const ctx: TokenContext = {
-    page: pageIndex + 1,
-    pages: template.pages.length,
-    title: template.name,
-    date,
-  };
-  const header = headerForPage(template.chrome, pageIndex);
-  const footer = footerForPage(template.chrome, pageIndex);
+  const [sheets, setSheets] = useState(1);
+
+  // How many physical sheets the page's content currently spans (for the label).
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() =>
+      setSheets(Math.max(1, Math.ceil(el.offsetHeight / geo.contentHeightPx - 0.02))),
+    );
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [geo.contentHeightPx]);
 
   const flow = page.blocks.filter((b) => b.placement.mode === 'flow');
   const floating = page.blocks.filter((b) => b.placement.mode === 'floating');
@@ -513,60 +430,71 @@ function EditPage({
     if (over && active.id !== over.id) onReorderFlow(String(active.id), String(over.id));
   }
 
+  const flowNode = (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <SortableContext items={flow.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+        {flow.map((b) => (
+          <FlowItem key={b.id} block={b} zoom={zoom} selected={sel?.blockId === b.id} onSelect={() => onSelect(b.id)} />
+        ))}
+      </SortableContext>
+      {flow.length === 0 && (
+        <p className="py-8 text-center text-xs text-ink-300 dark:text-ink-600">Add blocks from the panel →</p>
+      )}
+    </DndContext>
+  );
+
+  const floatingNode = floating.map((b) =>
+    b.placement.mode === 'floating' ? (
+      <FloatingItem
+        key={b.id}
+        block={b}
+        geo={geo}
+        zoom={zoom}
+        selected={sel?.blockId === b.id}
+        onSelect={() => onSelect(b.id)}
+        onChange={(placement) => onPlacement(b.id, placement)}
+      />
+    ) : null,
+  );
+
   return (
-    <div
-      className="relative bg-white text-ink-900 shadow-lg ring-1 ring-ink-300 dark:ring-ink-700"
-      style={{ width: geo.widthPx, minHeight: geo.heightPx, padding: geo.marginPx }}
-      onClick={onSelectPage}
-    >
-      <div ref={contentRef} className="relative" style={{ minHeight: geo.contentHeightPx }}>
-        <PageHeaderBand band={header} ctx={ctx} />
-        <PageFooterBand band={footer} ctx={ctx} />
-
-        {/* Flow column */}
-        <div style={{ paddingTop: header ? 32 : 0, paddingBottom: footer ? 32 : 0 }}>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-            <SortableContext items={flow.map((b) => b.id)} strategy={verticalListSortingStrategy}>
-              <div className="flex flex-col gap-3">
-                {flow.map((b) => (
-                  <FlowBlock
-                    key={b.id}
-                    block={b}
-                    zoom={zoom}
-                    selected={sel?.blockId === b.id}
-                    onSelect={() => onSelect(b.id)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-          {flow.length === 0 && (
-            <p className="py-8 text-center text-xs text-ink-300 dark:text-ink-600">
-              Add blocks from the panel →
-            </p>
-          )}
-        </div>
-
-        {/* Floating layer */}
-        {floating.map((b) =>
-          b.placement.mode === 'floating' ? (
-            <FloatingBlock
-              key={b.id}
-              block={b}
-              geo={geo}
-              contentRef={contentRef}
-              selected={sel?.blockId === b.id}
-              onSelect={() => onSelect(b.id)}
-              onMove={(placement) => onMoveFloating(b.id, placement)}
-            />
-          ) : null,
+    <div style={{ width: geo.widthPx * zoom }}>
+      <div className="mb-1 flex items-center justify-between px-1 text-xs text-ink-500">
+        <button className={isActive ? 'font-semibold text-accent' : ''} onClick={onActivate}>
+          Page {pageIndex + 1}
+          {isActive ? ' · active' : ''}
+          {sheets > 1 ? ` · ${sheets} sheets` : ''}
+        </button>
+        {canDelete && (
+          <button className="btn-ghost px-1 py-0.5" onClick={onDeletePage}>
+            <Trash2 size={13} />
+          </button>
         )}
       </div>
+      <PageScaler zoom={zoom} width={geo.widthPx}>
+        <div
+          className="shadow-lg ring-1 ring-ink-300 dark:ring-ink-700"
+          onClick={() => {
+            onActivate();
+            onDeselect();
+          }}
+        >
+          <PageFrame
+            template={template}
+            geo={geo}
+            pageIndex={pageIndex}
+            date={date}
+            contentRef={contentRef}
+            flow={flowNode}
+            floating={floatingNode}
+          />
+        </div>
+      </PageScaler>
     </div>
   );
 }
 
-function FlowBlock({
+function FlowItem({
   block,
   zoom,
   selected,
@@ -580,24 +508,18 @@ function FlowBlock({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: block.id,
   });
-  // The page is CSS-scaled by `zoom`; dnd-kit's drag translate is in unscaled
-  // px, so divide by zoom to keep the dragged block under the pointer.
-  const dragTransform = transform
-    ? { ...transform, x: transform.x / zoom, y: transform.y / zoom }
-    : transform;
+  // The page is CSS-scaled by `zoom`; divide dnd-kit's translate by zoom so the
+  // dragged block tracks the pointer.
+  const t = transform ? { ...transform, x: transform.x / zoom, y: transform.y / zoom } : transform;
   return (
     <div
       ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(dragTransform),
-        transition,
-        opacity: isDragging ? 0.5 : 1,
-      }}
+      style={{ transform: CSS.Transform.toString(t), transition, opacity: isDragging ? 0.5 : 1 }}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
       }}
-      className={`group relative rounded-lg p-1 transition ${
+      className={`group relative rounded p-1 transition ${
         selected ? 'ring-2 ring-accent' : 'ring-1 ring-transparent hover:ring-ink-200 dark:hover:ring-ink-700'
       }`}
     >
@@ -605,84 +527,88 @@ function FlowBlock({
         {...attributes}
         {...listeners}
         onClick={(e) => e.stopPropagation()}
+        style={{ touchAction: 'none' }}
         className="absolute -left-6 top-1 hidden cursor-grab text-ink-400 group-hover:block"
         aria-label="Drag to reorder"
       >
         <GripVertical size={16} />
       </button>
-      <RenderBlock block={block} mode="screen" />
+      <ScaleBox scale={block.scale ?? 1}>
+        <RenderBlock block={block} mode="screen" />
+      </ScaleBox>
     </div>
   );
 }
 
-function FloatingBlock({
+function FloatingItem({
   block,
   geo,
-  contentRef,
+  zoom,
   selected,
   onSelect,
-  onMove,
+  onChange,
 }: {
   block: ReportBlock;
   geo: ReturnType<typeof pageGeometry>;
-  contentRef: RefObject<HTMLDivElement>;
+  zoom: number;
   selected: boolean;
   onSelect: () => void;
-  onMove: (placement: BlockPlacement) => void;
+  onChange: (placement: BlockPlacement) => void;
 }) {
   if (block.placement.mode !== 'floating') return null;
-  const pos = block.placement;
-
-  function startDrag(e: ReactPointerEvent, mode: 'move' | 'resize') {
-    e.stopPropagation();
-    onSelect();
-    const rect = contentRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const orig = { x: pos.x, y: pos.y, w: pos.w };
-    function onMoveEv(ev: PointerEvent) {
-      const dx = ((ev.clientX - startX) / rect!.width) * 100;
-      const dy = ((ev.clientY - startY) / rect!.height) * 100;
-      if (mode === 'move') {
-        onMove({ ...pos, x: clamp(orig.x + dx, 0, 100), y: clamp(orig.y + dy, 0, 100) });
-      } else {
-        onMove({ ...pos, w: clamp(orig.w + dx, 8, 100) });
-      }
-    }
-    function onUp() {
-      window.removeEventListener('pointermove', onMoveEv);
-      window.removeEventListener('pointerup', onUp);
-    }
-    window.addEventListener('pointermove', onMoveEv);
-    window.addEventListener('pointerup', onUp);
-  }
-
+  const px = floatingToPx(geo, block.placement);
   return (
-    <div
-      style={floatingStyle(geo, pos)}
-      onPointerDown={(e) => startDrag(e, 'move')}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect();
-      }}
-      className={`cursor-move rounded-lg ${
-        selected ? 'ring-2 ring-accent' : 'ring-1 ring-ink-300 dark:ring-ink-700'
-      }`}
+    <Rnd
+      size={{ width: px.width, height: px.height }}
+      position={{ x: px.x, y: px.y }}
+      scale={zoom}
+      bounds="parent"
+      minWidth={24}
+      minHeight={24}
+      onMouseDown={onSelect}
+      onDragStart={onSelect}
+      onDragStop={(_e, d) =>
+        onChange({ mode: 'floating', ...pxToFloating(geo, { ...d, width: px.width, height: px.height }) })
+      }
+      onResizeStart={onSelect}
+      onResizeStop={(_e, _dir, ref, _delta, pos) =>
+        onChange({
+          mode: 'floating',
+          ...pxToFloating(geo, { x: pos.x, y: pos.y, width: ref.offsetWidth, height: ref.offsetHeight }),
+        })
+      }
+      className={`z-10 ${selected ? 'ring-2 ring-accent' : 'ring-1 ring-dashed ring-ink-400/60'}`}
     >
-      <RenderBlock block={block} mode="screen" />
-      {selected && (
-        <span
-          onPointerDown={(e) => startDrag(e, 'resize')}
-          className="absolute -bottom-1.5 -right-1.5 h-3 w-3 cursor-se-resize rounded-full bg-accent"
-        />
-      )}
+      <div className="h-full w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <RenderBlock block={block} mode="screen" />
+      </div>
+    </Rnd>
+  );
+}
+
+// Reserves correctly-scaled layout space for a CSS-transformed page (transform
+// alone wouldn't shrink the box). Measures the unscaled child height live.
+function PageScaler({ zoom, width, children }: { zoom: number; width: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div style={{ width: width * zoom, height: height * zoom }}>
+      <div ref={ref} style={{ width, transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
+        {children}
+      </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Inspector panels
+// Inspector
 // ─────────────────────────────────────────────────────────────────────────
 
 function BlockInspector({
@@ -723,34 +649,11 @@ function BlockInspector({
 
       {def?.Editor && <def.Editor block={block} onChange={onConfig} />}
 
-      <label className="block border-t border-ink-200 pt-3 dark:border-ink-800">
-        <span className="label mb-1 flex items-center justify-between">
-          <span>Size {Math.round(scale * 100)}%</span>
-          {scale !== 1 && (
-            <button className="text-xs text-accent" onClick={() => onScale(1)}>
-              Reset
-            </button>
-          )}
-        </span>
-        <input
-          type="range"
-          min={0.5}
-          max={2.5}
-          step={0.05}
-          value={scale}
-          onChange={(e) => onScale(Number(e.target.value))}
-          className="w-full accent-accent"
-        />
-      </label>
-
       <div className="space-y-2 border-t border-ink-200 pt-3 dark:border-ink-800">
         <span className="label">Placement</span>
         <div className="flex gap-1">
-          <button
-            className={`chip ${!floating ? 'chip-active' : ''}`}
-            onClick={() => onPlacement({ mode: 'flow' })}
-          >
-            Flow
+          <button className={`chip ${!floating ? 'chip-active' : ''}`} onClick={() => onPlacement({ mode: 'flow' })}>
+            In flow
           </button>
           <button
             className={`chip ${floating ? 'chip-active' : ''}`}
@@ -758,40 +661,61 @@ function BlockInspector({
               onPlacement(
                 block.placement.mode === 'floating'
                   ? block.placement
-                  : { mode: 'floating', x: 10, y: 10, w: 40 },
+                  : { mode: 'floating', x: 10, y: 10, w: 40, h: 25 },
               )
             }
           >
             Floating
           </button>
         </div>
-        {block.placement.mode === 'floating' && (
+
+        {/* Sizing: ONE mechanism per placement. */}
+        {floating && block.placement.mode === 'floating' ? (
+          <p className="text-[11px] text-ink-400">
+            Drag the block to move it; drag its handles to resize. Or set width/height:
+          </p>
+        ) : (
           <label className="block">
-            <span className="label mb-1">Width {Math.round(block.placement.w)}%</span>
+            <span className="label mb-1 flex items-center justify-between">
+              <span>Size {Math.round(scale * 100)}%</span>
+              {scale !== 1 && (
+                <button className="text-xs text-accent" onClick={() => onScale(1)}>
+                  Reset
+                </button>
+              )}
+            </span>
             <input
               type="range"
-              min={8}
-              max={100}
-              step={1}
-              value={block.placement.w}
-              onChange={(e) =>
-                block.placement.mode === 'floating' &&
-                onPlacement({ ...block.placement, w: Number(e.target.value) })
-              }
+              min={0.5}
+              max={2.5}
+              step={0.05}
+              value={scale}
+              onChange={(e) => onScale(Number(e.target.value))}
               className="w-full accent-accent"
             />
           </label>
         )}
+
+        {block.placement.mode === 'floating' &&
+          (() => {
+            const fp = block.placement; // narrowed const → safe inside the closures
+            return (
+              <div className="grid grid-cols-2 gap-2">
+                <PctField label="Width" value={fp.w} onChange={(w) => onPlacement({ ...fp, w })} />
+                <PctField
+                  label="Height"
+                  value={fp.h ?? DEFAULT_FLOAT_H}
+                  onChange={(h) => onPlacement({ ...fp, h })}
+                />
+              </div>
+            );
+          })()}
       </div>
 
       {pages.length > 1 && (
         <label className="block">
           <span className="label mb-1">Move to page</span>
-          <select
-            className="input"
-            value={pageId}
-            onChange={(e) => onMovePage(e.target.value)}
-          >
+          <select className="input" value={pageId} onChange={(e) => onMovePage(e.target.value)}>
             {pages.map((p, i) => (
               <option key={p.id} value={p.id}>
                 Page {i + 1}
@@ -813,31 +737,42 @@ function BlockInspector({
   );
 }
 
-function ChromeEditor({
-  chrome,
+function PctField({
+  label,
+  value,
   onChange,
 }: {
-  chrome: ReportChrome;
-  onChange: (c: ReportChrome) => void;
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
 }) {
+  return (
+    <label className="block">
+      <span className="label mb-1">
+        {label} {Math.round(value)}%
+      </span>
+      <input
+        type="range"
+        min={8}
+        max={100}
+        step={1}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-accent"
+      />
+    </label>
+  );
+}
+
+function ChromeEditor({ chrome, onChange }: { chrome: ReportChrome; onChange: (c: ReportChrome) => void }) {
   return (
     <section className="card space-y-3 p-4">
       <h3 className="label">Header &amp; footer</h3>
       <p className="text-[11px] text-ink-400">
         Tokens: {'{page}'} {'{pages}'} {'{title}'} {'{date}'}
       </p>
-
-      <BandFields
-        label="Header"
-        band={chrome.header}
-        onChange={(b) => onChange({ ...chrome, header: b })}
-      />
-      <BandFields
-        label="Footer"
-        band={chrome.footer}
-        onChange={(b) => onChange({ ...chrome, footer: b })}
-      />
-
+      <BandFields label="Header" band={chrome.header} onChange={(b) => onChange({ ...chrome, header: b })} />
+      <BandFields label="Footer" band={chrome.footer} onChange={(b) => onChange({ ...chrome, footer: b })} />
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"

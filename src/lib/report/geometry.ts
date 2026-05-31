@@ -48,20 +48,42 @@ export function pageSizeCss(size: PageSize, orientation: Orientation): string {
   return `${size === 'a4' ? 'A4' : size} ${orientation}`;
 }
 
+/** A floating block's placement (percentages of the content box). */
+export type FloatingPos = { x: number; y: number; w: number; h?: number };
+
+/** Default floating height when one was never set (% of content box). */
+export const DEFAULT_FLOAT_H = 18;
+
 /**
- * Absolute style for a floating block. x/y/w/h are percentages of the content
- * box; we resolve them against the NOMINAL content dimensions (constant) so a
- * float stays put even when sibling flow content spills the page taller.
+ * Absolute style for a floating block (print/read-only). x/y/w/h are percentages
+ * of the content box, resolved against the NOMINAL content dimensions so a float
+ * stays put even when sibling flow content spills the page taller.
  */
-export function floatingStyle(
-  geo: PageGeometry,
-  pos: { x: number; y: number; w: number; h?: number },
-): CSSProperties {
+export function floatingStyle(geo: PageGeometry, pos: FloatingPos): CSSProperties {
+  const r = floatingToPx(geo, pos);
+  return { position: 'absolute', left: r.x, top: r.y, width: r.width, height: r.height };
+}
+
+/** Percentages → pixels against the nominal content box (for react-rnd). */
+export function floatingToPx(geo: PageGeometry, pos: FloatingPos) {
   return {
-    position: 'absolute',
-    left: `${(pos.x / 100) * geo.contentWidthPx}px`,
-    top: `${(pos.y / 100) * geo.contentHeightPx}px`,
-    width: `${(pos.w / 100) * geo.contentWidthPx}px`,
-    height: pos.h !== undefined ? `${(pos.h / 100) * geo.contentHeightPx}px` : undefined,
+    x: (pos.x / 100) * geo.contentWidthPx,
+    y: (pos.y / 100) * geo.contentHeightPx,
+    width: (pos.w / 100) * geo.contentWidthPx,
+    height: ((pos.h ?? DEFAULT_FLOAT_H) / 100) * geo.contentHeightPx,
+  };
+}
+
+/** Pixels → percentages of the nominal content box (clamped to 0–100). */
+export function pxToFloating(
+  geo: PageGeometry,
+  r: { x: number; y: number; width: number; height: number },
+): Required<FloatingPos> {
+  const pct = (v: number, total: number) => Math.max(0, Math.min(100, (v / total) * 100));
+  return {
+    x: pct(r.x, geo.contentWidthPx),
+    y: pct(r.y, geo.contentHeightPx),
+    w: pct(r.width, geo.contentWidthPx),
+    h: pct(r.height, geo.contentHeightPx),
   };
 }

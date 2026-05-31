@@ -126,24 +126,22 @@ function Render({ block, mode }: BlockRenderProps) {
             ? patterns?.get(section.rhythmPatternId)
             : undefined;
           return (
-            <section key={section.id} className="break-inside-avoid">
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-accent">
+            <section key={section.id}>
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-accent [break-after:avoid]">
                 {section.label || defaultLabelForKind(section.kind)}
               </h3>
               {c.showRhythm && pattern && (
-                <div className="mb-2">
+                <div className="mb-2 break-inside-avoid">
                   <RhythmChart pattern={pattern} symbols={symbolMap} size="sm" />
                 </div>
               )}
               {c.showChords ? (
                 <div className="space-y-1">
                   {section.lines.map((line) => (
-                    <ChordLine
-                      key={line.id}
-                      line={line}
-                      transpose={c.transpose}
-                      preferFlats={flats}
-                    />
+                    // Keep each line's chords welded to its lyric across a page break.
+                    <div key={line.id} className="break-inside-avoid">
+                      <ChordLine line={line} transpose={c.transpose} preferFlats={flats} />
+                    </div>
                   ))}
                 </div>
               ) : (

@@ -10,15 +10,26 @@ import { uniqueChords } from '@/lib/song';
 import { registerBlock } from '../registry';
 import type { BlockEditorProps, BlockRenderProps } from '../types';
 
-function chords(c: Record<string, unknown>): string[] {
-  return Array.isArray(c.chords) ? (c.chords.filter((x) => typeof x === 'string') as string[]) : [];
+// The raw text the user types is the source of truth (`chordsText`), so commas
+// and spaces never get normalized away mid-keystroke. We parse to a list only at
+// render. (Old data stored a `chords` array — still honored as a fallback.)
+function chordsText(c: Record<string, unknown>): string {
+  if (typeof c.chordsText === 'string') return c.chordsText;
+  if (Array.isArray(c.chords)) return c.chords.filter((x) => typeof x === 'string').join(', ');
+  return '';
+}
+function parseChords(text: string): string[] {
+  return text
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 function size(c: Record<string, unknown>): 'sm' | 'md' | 'lg' {
   return c.size === 'md' || c.size === 'lg' ? c.size : 'sm';
 }
 
 function Render({ block, mode }: BlockRenderProps) {
-  const list = chords(block.config);
+  const list = parseChords(chordsText(block.config));
   const { resolve, instrument } = useChartResolver();
   if (list.length === 0) {
     if (mode === 'print') return null;
@@ -52,12 +63,12 @@ function Render({ block, mode }: BlockRenderProps) {
 
 function Editor({ block, onChange }: BlockEditorProps) {
   const songs = useSongs();
-  const list = chords(block.config);
+  const text = chordsText(block.config);
 
   function fillFromSong(songId: string) {
     const song = songs?.find((s) => s.id === songId);
     if (!song) return;
-    onChange({ chords: uniqueChords(song.sections, 0, false) });
+    onChange({ chordsText: uniqueChords(song.sections, 0, false).join(', ') });
   }
 
   return (
@@ -66,16 +77,9 @@ function Editor({ block, onChange }: BlockEditorProps) {
         <span className="label mb-1">Chords (comma-separated)</span>
         <input
           className="input"
-          value={list.join(', ')}
+          value={text}
           placeholder="G, C, D, Em"
-          onChange={(e) =>
-            onChange({
-              chords: e.target.value
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
+          onChange={(e) => onChange({ chordsText: e.target.value })}
         />
       </label>
       <label className="block">
@@ -114,7 +118,7 @@ registerBlock({
   label: 'Chord charts',
   icon: Grid3x3,
   defaultPlacement: { mode: 'flow' },
-  defaultConfig: () => ({ chords: [], size: 'sm' }),
+  defaultConfig: () => ({ chordsText: '', size: 'sm' }),
   Render,
   Editor,
 });

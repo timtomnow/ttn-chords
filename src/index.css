@@ -56,37 +56,40 @@
   }
 }
 
-/* Report PDF print styles (Phase 8). The print view (ReportPrint) renders a
-   `.report-print` container of `.report-page` sheets; the @page size/margin is
-   injected per template. Here we strip chrome, force a white sheet, and break
-   between explicit pages. A long flow column spills onto a continuation sheet
-   because `.report-page` uses min-height (set inline) and never clips. */
+/* Report PDF print styles (Phase 8). The print view (ReportPrint) renders
+   `.report-paper` units (one per explicit page); each holds a `.report-page`
+   content box. The physical margin comes from the per-template `@page { margin }`
+   rule injected by ReportPrint — `@page` margins repeat on EVERY physical sheet,
+   so a long song that spills onto a continuation sheet keeps clean margins. The
+   on-screen `.report-paper` padding (the visual margin) is removed here so it
+   isn't double-counted. ReportPrint is the only thing on the page (it renders
+   outside the app shell), so we just hide the toolbar and flatten backgrounds. */
 @media print {
-  /* Hide everything except the print container; reveal it and its subtree. */
-  body * {
-    visibility: hidden;
-  }
-  .report-print,
-  .report-print * {
-    visibility: visible;
-  }
-  .report-print {
-    position: absolute;
-    inset: 0;
+  html,
+  body {
     background: #fff !important;
   }
   .no-print {
     display: none !important;
   }
-  /* Each explicit page starts a fresh sheet; the last one mustn't add a blank. */
-  .report-page {
-    break-after: page;
+  .report-print {
+    background: #fff !important;
+    padding: 0 !important;
+  }
+  /* Margin now comes from @page; drop the simulated paper margin + chrome. */
+  .report-paper {
+    width: auto !important;
+    padding: 0 !important;
     box-shadow: none !important;
   }
-  .report-page:last-child {
+  /* One explicit page per physical sheet boundary; no trailing blank sheet. */
+  .report-paper {
+    break-after: page;
+  }
+  .report-paper:last-child {
     break-after: auto;
   }
-  /* Keep blocks from splitting mid-figure where we can. */
+  /* Keep figures/lines from splitting across a sheet boundary. */
   .break-inside-avoid {
     break-inside: avoid;
   }

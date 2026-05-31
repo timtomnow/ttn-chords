@@ -117,7 +117,7 @@ registerBlock({
   type: 'image',
   label: 'Image / logo',
   icon: ImageIcon,
-  defaultPlacement: { mode: 'floating', x: 5, y: 5, w: 30 },
+  defaultPlacement: { mode: 'floating', x: 5, y: 5, w: 25, h: 18 },
   defaultConfig: () => ({ photoId: '', alt: '' }),
   Render,
   Editor,

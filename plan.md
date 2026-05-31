@@ -40,7 +40,8 @@ live under the same domain and back up the same way.
 | Icons          | lucide-react                            | |
 | ChordPro       | Custom parser/serializer (our model)    | No heavyweight dep; we need the beat-timing extension. Revisit if a lib proves better. |
 | Chord charts   | Custom SVG renderer + bundled library   | Tuning-driven so new instruments need no code. |
-| PDF engine     | **Browser print-to-PDF** (CSS `@page`)  | Decided in Phase 8. Zero new deps; renders our React SVG chord/rhythm charts faithfully (a PDF library would mean redrawing every chart). The print view injects a per-template `@page` size/margin rule; the user prints / "Save as PDF". Caveat: no CSS margin-box page counters in browsers, so `{page}`/`{pages}` resolve to **explicit-page** numbers, not physical sheets (see Phase 8 notes). |
+| PDF engine     | **Browser print-to-PDF** (CSS `@page`)  | Decided in Phase 8. Zero new deps; renders our React SVG chord/rhythm charts faithfully (a PDF library would mean redrawing every chart). The print view injects a per-template `@page` size+**margin** rule so margins repeat on every physical sheet; long flow content spills cleanly. Caveat: no CSS margin-box page counters in browsers, so `{page}`/`{pages}` resolve to **explicit-page** numbers, not physical sheets (see Phase 8 notes). |
+| Report drag/resize | **react-rnd** (floating blocks)     | Added in the Phase-8 editor rework. Purpose-built draggable+resizable boxes with a `scale` prop that fixes the cursor/zoom mismatch and gives real resize handles. Replaced hand-rolled pointer dragging (which selected text and lagged the cursor). Flow-block reordering still uses @dnd-kit. |
 
 > **No new top-level deps** without updating this table and noting the tradeoff.
 > **Bump the Dexie version** in `schema.ts` + add a migration on any stored-shape
@@ -240,6 +241,28 @@ performance-view pattern.
   `ReportChrome` fleshed out in `types.ts`. `reportTemplates` already existed in
   Dexie **v2** and only gained non-indexed fields, so **no version bump** was
   needed; it's already in JSON export/import + the ttn-backup payload.
+
+**Phase 8 editor rework (UX/robustness pass).** The first editor pass was riddled
+with interaction bugs; the interaction layer was rebuilt (data model, registry,
+blocks and print engine kept):
+- **Floating blocks now use `react-rnd`** (drag + 8-handle resize, `scale`-aware
+  so it tracks the cursor under the canvas zoom). Replaced hand-rolled pointer
+  dragging that selected text and lagged.
+- **One size mechanism per placement:** floating = resize the box (drag handles +
+  W/H fields); flow = a "Size" scale slider (`ReportBlock.scale` via `ScaleBox`).
+  No more competing controls.
+- **Shared `PageFrame`** renders the page shell for both the editor and print, so
+  geometry/margins/bands can't drift. The page model is now a "paper" wrapper
+  (visual margin) around a content-box `.report-page`.
+- **Clean multi-page spill:** print uses real `@page { margin }` (repeats on every
+  physical sheet) instead of div padding; song lines get line-level
+  `break-inside: avoid` so chords never separate from lyrics across a sheet. The
+  editor shows a "· N sheets" hint when a page's content spans more than one.
+- **Input/sizing fixes:** the chord-chart field stores raw text (typing commas
+  works); image blocks carry an explicit floating height; print container
+  hardened (no more `position:absolute` clipping).
+- New dep **react-rnd** (recorded in §2). Canvas has zoom (−/+/Fit) + a
+  collapsible inspector to cope with the shell's width.
 
 ### Phase 9 — Import from a song URL (e.g. Ultimate Guitar)
 - Given a URL, pull lyrics/chords into an editable **draft** song.

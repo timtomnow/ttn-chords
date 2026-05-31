@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { useReportTemplate } from '@/db/repo';
-import { pageSizeCss } from '@/lib/report/geometry';
+import { MARGIN_IN, pageSizeCss } from '@/lib/report/geometry';
 import { ReportPageSurface } from '@/components/report/ReportPageSurface';
 import '@/lib/report/blocks'; // register built-in blocks
 
@@ -33,8 +33,9 @@ export function ReportPrint() {
 
   return (
     <div className="report-print min-h-screen bg-ink-200 dark:bg-ink-950">
-      {/* @page rule must be dynamic per template, so it lives here not in CSS. */}
-      <style>{`@page { size: ${pageSizeCss(template.pageSize, template.orientation)}; margin: 0; }`}</style>
+      {/* @page is dynamic per template (lives here, not in CSS). The margin
+          repeats on every physical sheet, so spilled songs stay clean. */}
+      <style>{`@page { size: ${pageSizeCss(template.pageSize, template.orientation)}; margin: ${MARGIN_IN}in; }`}</style>
 
       <div className="no-print sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-ink-300 bg-white px-4 py-3 dark:border-ink-700 dark:bg-ink-900">
         <button className="btn-ghost" onClick={() => navigate(`/reports/${template.id}`)}>
