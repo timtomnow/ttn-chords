@@ -4,7 +4,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './schema';
 import { newId } from '@/lib/id';
-import type { AppSettings, Setlist, Song } from '@/types';
+import type {
+  AppSettings,
+  ChordDefinition,
+  Instrument,
+  Setlist,
+  Song,
+} from '@/types';
 
 const now = () => Date.now();
 
@@ -86,6 +92,64 @@ export async function updateSetlist(id: string, patch: Partial<Setlist>): Promis
 
 export async function deleteSetlist(id: string): Promise<void> {
   await db.setlists.delete(id);
+}
+
+// ───────── Instruments (user-defined; builtins live in src/lib/chords) ─────────
+
+export function useUserInstruments(): Instrument[] | undefined {
+  return useLiveQuery(() => db.instruments.orderBy('name').toArray());
+}
+
+export async function createInstrument(
+  data: Omit<Instrument, 'id' | 'createdAt' | 'updatedAt'>,
+): Promise<string> {
+  const id = newId();
+  await db.instruments.add({ ...data, id, createdAt: now(), updatedAt: now() });
+  return id;
+}
+
+export async function updateInstrument(
+  id: string,
+  patch: Partial<Instrument>,
+): Promise<void> {
+  await db.instruments.update(id, { ...patch, updatedAt: now() });
+}
+
+export async function deleteInstrument(id: string): Promise<void> {
+  await db.instruments.delete(id);
+}
+
+// ───────── Chord definitions (user custom / overrides of bundled charts) ─────────
+
+export function useChordDefinitions(): ChordDefinition[] | undefined {
+  return useLiveQuery(() => db.chordDefinitions.toArray());
+}
+
+export function useChordDefinitionsFor(
+  instrumentId: string | undefined,
+): ChordDefinition[] | undefined {
+  return useLiveQuery(
+    () => (instrumentId ? db.chordDefinitions.where('instrumentId').equals(instrumentId).toArray() : []),
+    [instrumentId],
+  );
+}
+
+export async function saveChordDefinition(
+  data: Omit<ChordDefinition, 'id' | 'createdAt' | 'updatedAt'> & { id?: string },
+): Promise<string> {
+  const id = data.id ?? newId();
+  const existing = data.id ? await db.chordDefinitions.get(data.id) : undefined;
+  await db.chordDefinitions.put({
+    ...data,
+    id,
+    createdAt: existing?.createdAt ?? now(),
+    updatedAt: now(),
+  });
+  return id;
+}
+
+export async function deleteChordDefinition(id: string): Promise<void> {
+  await db.chordDefinitions.delete(id);
 }
 
 // ───────── Settings (singleton) ─────────
