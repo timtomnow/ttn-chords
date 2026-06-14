@@ -420,6 +420,8 @@ export type AppSettings = {
   performanceViewId?: string;
   /** Bars visible at once in the Highway (side-scrolling) view. Additive. */
   horizontalBars?: number;
+  /** Count-in beats before playback in the Highway view (0, 4, or 8). Additive. */
+  horizontalCountIn?: number;
   defaultTimeSignature?: TimeSignature;
   defaultTempo?: number;
   /** Metronome tool preferences (Music Tools). Additive; non-indexed. */

@@ -311,10 +311,19 @@ engine, and the performance-view registry).
   auto-scroll controls for them).
 - **`HorizontalView`** (`components/performance/views/HorizontalView.tsx`,
   registered id `horizontal` / "Highway"): chords on a beat grid with lyrics
-  beneath, a fixed playhead near the left, and the lane translated each rAF frame
-  from `transport.getPosition()` so it scrolls locked to the click. A 4/8-bar
-  window control (persisted in `AppSettings.horizontalBars`); transpose + chord
-  popover via the shell. Untimed songs show a "Tag beats" prompt.
+  lane-packed beneath (up to 3 rows so close words never overlap), a fixed
+  playhead, and a scroll position derived each rAF frame from a view-owned play
+  origin + `transport.getPosition()` so it scrolls locked to the click. The view
+  owns the transport (play/pause in its toolbar) and adds: **free scrolling when
+  stopped** (native horizontal scroll) with a **click-the-ruler-to-set-start**
+  affordance and a green start marker; a **Jump to…** section dropdown; a
+  **Loop** toggle (loops the section containing the start point); a **0/4/8-beat
+  count-in** that runs each time play starts (persisted in
+  `AppSettings.horizontalCountIn`); and an **Edit** mode that drag/nudge/clears
+  chord onsets on a 1/4·1/8·1/16 grid and writes straight back via `updateSong`
+  (the same beat editing as the tag-beats fine-tune step). A 4/8-bar window
+  control (`AppSettings.horizontalBars`); transpose + chord popover via the
+  shell. Untimed songs show a "Tag beats" prompt.
 - **`TagBeats`** (`pages/songs/TagBeats.tsx`, route `/songs/:id/tag`, button in
   `SongView`): single-tap play-along tagging — one-bar count-in, then tap a big
   button (or Space) on the beat per chord; onsets read from the transport,
