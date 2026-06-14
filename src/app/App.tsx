@@ -8,6 +8,7 @@ import { ReportPrint } from '@/pages/reports/ReportPrint';
 import { Tools } from '@/pages/Tools';
 import { Settings } from '@/pages/Settings';
 import { ThemeProvider } from './theme';
+import { PwaUpdater } from '@/components/PwaUpdater';
 import { installTtnBackupAdapter } from '@/lib/ttnBackup';
 import { getSettings } from '@/db/repo';
 import { applyAccent } from '@/lib/accent';
@@ -23,6 +24,7 @@ export function App() {
 
   return (
     <ThemeProvider>
+      <PwaUpdater />
       <Routes>
         {/* Print view lives outside the shell (more specific than /reports/*,
             so it wins) — the printed page is just the report. */}

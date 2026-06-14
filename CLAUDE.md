@@ -106,3 +106,9 @@ backup format.
 - Inline `<script>` in `index.html` applies theme + accent before React mounts
   to avoid a flash — mirror any change there in `src/app/theme.tsx` /
   `src/lib/accent.ts`.
+- **Updates:** `registerType: 'prompt'`. No manual version bump is needed — the
+  hashed bundle changes every build, so each deploy yields a new `sw.js`.
+  `src/components/PwaUpdater.tsx` (`useRegisterSW`, mounted in `App`) registers
+  the SW, re-checks on focus + every 30 min, and shows a "new version available
+  → Refresh" pill so a deploy surfaces while the app is open instead of only on
+  the next cold reopen.

@@ -32,7 +32,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // `prompt`, not `autoUpdate`: a new deploy is surfaced in-app (see
+      // PwaUpdater) with a Refresh button instead of silently waiting for the
+      // next cold reopen — so updates actually show up while the app is open.
+      registerType: 'prompt',
       includeAssets: [
         'favicon.svg',
         'icon.svg',
