@@ -37,3 +37,4 @@ lerna-debug.log*
 
 # Test
 coverage/
+.playwright-mcp/

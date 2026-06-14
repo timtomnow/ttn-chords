@@ -24,7 +24,8 @@ import {
   buildTimeline,
   quarterBeatsPerBar,
 } from '@/lib/timeline';
-import type { SectionSpan } from '@/lib/timeline';
+import type { TimelineBar } from '@/lib/timeline';
+import { deleteBarAt, insertBarAt, isBlankBar } from '@/lib/beatEdit';
 import type { Beats, Section, Song } from '@/types';
 
 type Phase = 'idle' | 'countin' | 'recording' | 'review';
@@ -530,68 +531,17 @@ function ReviewEditor({
     );
   }
 
-  // ── Bar insert / delete ────────────────────────────────────────────────
+  // ── Bar insert / delete (shared logic in lib/beatEdit) ──────────────────
   // Beats are section-relative, so a bar op shifts every event at or after the
   // bar within its section by ±one bar; the section length is derived from its
   // last event, so the timeline (and all repeats) follow automatically.
-
-  /** The section span an absolute beat falls in (last span as a fallback). */
-  function spanForBeat(absBeat: number) {
-    return (
-      timeline.sections.find(
-        (s) => absBeat >= s.startBeat - EPS && absBeat < s.startBeat + s.lengthBeats - EPS,
-      ) ?? timeline.sections[timeline.sections.length - 1]
-    );
-  }
-
-  /** Shift events in a section whose beat ≥ `fromBeat` by `delta` quarter-beats. */
-  function shiftSectionEvents(sectionIndex: number, fromBeat: number, delta: number) {
-    setWorking((prev) =>
-      prev.map((s, si) =>
-        si !== sectionIndex
-          ? s
-          : {
-              ...s,
-              lines: s.lines.map((l) => ({
-                ...l,
-                events: l.events.map((e) => {
-                  if (!e.beat) return e;
-                  const v = beatsToNumber(e.beat);
-                  return v >= fromBeat - EPS ? { ...e, beat: snap(v + delta) } : e;
-                }),
-              })),
-            },
-      ),
-    );
+  function insertBar(absBeat: number) {
+    setWorking((prev) => insertBarAt(prev, timeline, absBeat));
     setSelectedId(null);
   }
-
-  /** Beat offset of `absBeat` within a single pass of its section. */
-  function beatWithinPass(span: SectionSpan, absBeat: number) {
-    const rel = absBeat - span.startBeat;
-    return rel - Math.floor((rel + EPS) / span.passBeats) * span.passBeats;
-  }
-
-  /** Insert one empty bar immediately before the bar starting at `absBeat`. */
-  function insertBar(absBeat: number) {
-    const span = spanForBeat(absBeat);
-    if (!span) return;
-    shiftSectionEvents(span.sectionIndex, beatWithinPass(span, absBeat), span.barBeats);
-  }
-
-  /** Remove a (blank) bar, pulling everything after it back by one bar. */
-  function deleteBar(bar: { absBeat: number }) {
-    const span = spanForBeat(bar.absBeat);
-    if (!span) return;
-    const start = beatWithinPass(span, bar.absBeat);
-    shiftSectionEvents(span.sectionIndex, start + span.barBeats, -span.barBeats);
-  }
-
-  /** A bar with no chord onset anywhere inside it — safe to delete. */
-  function isBlankBar(bar: { absBeat: number; beats: number }) {
-    return !timeline.items.some(
-      (it) => it.absBeat >= bar.absBeat - EPS && it.absBeat < bar.absBeat + bar.beats - EPS,
-    );
+  function deleteBar(bar: TimelineBar) {
+    setWorking((prev) => deleteBarAt(prev, timeline, bar.absBeat));
+    setSelectedId(null);
   }
 
   const laneWidth = timeline.totalBeats * PX_PER_BEAT + 80;
@@ -637,7 +587,7 @@ function ReviewEditor({
         <div className="relative h-full min-h-[16rem]" style={{ width: laneWidth }}>
           {/* Bar grid */}
           {timeline.bars.map((bar) => {
-            const blank = isBlankBar(bar);
+            const blank = isBlankBar(timeline, bar);
             return (
               <div key={bar.number} className="absolute inset-y-0" style={{ left: bar.absBeat * PX_PER_BEAT }}>
                 <div className="h-full w-px bg-ink-300 dark:bg-ink-700" />
