@@ -289,6 +289,40 @@ blocks and print engine kept):
 - Real branded icons (replace placeholder SVGs; generate the PNG sizes the
   manifest references). Empty states, keyboard shortcuts, a11y pass, perf.
 
+### Phase 12 — Highway (side-scrolling) view + play-along beat tagging ✅
+A beat-synced, horizontally scrolling reading view plus an easy way to put the
+beat-timing layer onto a song. No new deps, no Dexie bump (built entirely on the
+existing `ChordEvent.beat` layer, `Song.tempo`/`timeSignature`, the metronome
+engine, and the performance-view registry).
+
+- **`src/lib/timeline.ts`** (pure, unit-tested): `buildTimeline(song, defaults)`
+  flattens the per-section beats into one absolute, quarter-note-beat timeline —
+  resolves each section's effective tempo/time-signature (section → song →
+  defaults), rounds each section to whole bars, lays sections end-to-end
+  (honouring `section.repeat`), and returns timed `items`, the `bars` grid, and
+  `sections` spans. `quarterBeatsPerBar` (4/4=4, 6/8=3…) and `hasAnyBeats` too.
+- **Shared transport:** `MetronomeEngine` gained a continuous, tempo-change-aware
+  `getPositionBeats()` (read off the audio clock) surfaced through `useMetronome`
+  as `getPosition()`. `PerformShell` now owns a single metronome instance and
+  passes a `Transport` (`getPosition`, tempo, time signature, toggle, setTempo)
+  to views via `PerformanceViewProps`; `PerformMetronome` became the
+  presentational control bound to it. A new `beatClock` view capability marks
+  views that derive motion from the transport (the shell hides its px/sec
+  auto-scroll controls for them).
+- **`HorizontalView`** (`components/performance/views/HorizontalView.tsx`,
+  registered id `horizontal` / "Highway"): chords on a beat grid with lyrics
+  beneath, a fixed playhead near the left, and the lane translated each rAF frame
+  from `transport.getPosition()` so it scrolls locked to the click. A 4/8-bar
+  window control (persisted in `AppSettings.horizontalBars`); transpose + chord
+  popover via the shell. Untimed songs show a "Tag beats" prompt.
+- **`TagBeats`** (`pages/songs/TagBeats.tsx`, route `/songs/:id/tag`, button in
+  `SongView`): single-tap play-along tagging — one-bar count-in, then tap a big
+  button (or Space) on the beat per chord; onsets read from the transport,
+  converted per section to section-relative beats snapped to a 1/16 grid
+  (reusing `parseBeat`). A fine-tune editor then lets you drag each chord on the
+  grid (1/4 · 1/8 · 1/16 snap), nudge, or clear before saving. This also
+  delivers the long-parked "visual per-event beat picker".
+
 ---
 
 ## 5. Conventions (see CLAUDE.md for the full list)
@@ -325,12 +359,12 @@ subset of a future full-notation model (add `duration` later — additive only).
   descriptor (`src/lib/report/types.ts`) was built reuse-aware; a future
   customizable per-song screen view could share it with the Phase-5 performance-
   view registry. Intentionally NOT coupled in Phase 8.
-- Editor affordances: tap-to-place chords and a visual per-event beat picker
-  (syntax + storage already done in Phases 2–3; this is UI sugar).
-- More performance views (registry already supports them — Phase 5): ticker /
-  cross-screen scroll, fixed-line teleprompter (N lines at a time, alignment
-  options), two-column, auto-scroll that follows the beat-timing layer instead
-  of a flat px/sec rate.
+- Editor affordances: tap-to-place chords (a visual per-event beat picker is now
+  done — see Phase 12's TagBeats fine-tune editor).
+- More performance views (registry already supports them — Phase 5): ~~ticker /
+  cross-screen scroll~~ (done, Phase 12 Highway) / fixed-line teleprompter (N
+  lines at a time, alignment options) / two-column. ~~auto-scroll that follows
+  the beat-timing layer~~ (the Highway does, via the shared transport).
 - ChordPro grid (`{start_of_grid}`/`{sog}`) import bridge → map bars/beats/
   chords onto the beat-timing layer (independent of strum patterns, Phase 7).
 - Audio playback / click track off the timing layer? (future)

@@ -79,12 +79,35 @@ export class MetronomeEngine {
   private queue: { time: number; tick: Tick }[] = [];
   private cfg: MetronomeConfig = { ...DEFAULT_METRONOME };
 
+  // Continuous-position tracking (quarter-note beats from the first tick). Kept
+  // tempo-change-aware: each tempo change banks the beats elapsed so far so the
+  // running position stays smooth when the user nudges the tempo live.
+  private posBeatsBanked = 0;
+  private posSinceTime = 0;
+
   running = false;
   /** Fired (on the rAF loop, ~at audio time) for each tick — drive visuals here. */
   onTick: ((tick: Tick) => void) | null = null;
 
   setConfig(cfg: Partial<MetronomeConfig>): void {
+    const tempoChanged = cfg.tempo !== undefined && cfg.tempo !== this.cfg.tempo;
+    if (tempoChanged && this.running && this.ctx) {
+      // Bank beats elapsed at the OLD tempo before switching.
+      this.posBeatsBanked = this.getPositionBeats();
+      this.posSinceTime = this.ctx.currentTime;
+    }
     this.cfg = { ...this.cfg, ...cfg };
+  }
+
+  /**
+   * Continuous playback position in quarter-note beats since `start()` (0 at the
+   * first audible tick). Read from the rock-steady audio clock so visuals stay
+   * locked to the click. Returns 0 while stopped.
+   */
+  getPositionBeats(): number {
+    if (!this.running || !this.ctx) return 0;
+    const elapsed = Math.max(0, this.ctx.currentTime - this.posSinceTime);
+    return this.posBeatsBanked + (elapsed * clampTempo(this.cfg.tempo)) / 60;
   }
 
   start(): void {
@@ -99,6 +122,9 @@ export class MetronomeEngine {
     this.sub = 0;
     this.queue = [];
     this.nextTickTime = this.ctx.currentTime + 0.06;
+    // Position zero == the first audible tick.
+    this.posBeatsBanked = 0;
+    this.posSinceTime = this.nextTickTime;
     this.timer = setInterval(() => this.scheduler(), LOOKAHEAD_MS);
     this.raf = requestAnimationFrame(this.drain);
   }

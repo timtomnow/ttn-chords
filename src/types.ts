@@ -418,6 +418,8 @@ export type AppSettings = {
   myInstrumentId: string;
   /** Last-used performance reading view id (see lib/performance/registry). */
   performanceViewId?: string;
+  /** Bars visible at once in the Highway (side-scrolling) view. Additive. */
+  horizontalBars?: number;
   defaultTimeSignature?: TimeSignature;
   defaultTempo?: number;
   /** Metronome tool preferences (Music Tools). Additive; non-indexed. */

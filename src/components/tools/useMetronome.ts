@@ -47,6 +47,10 @@ export function useMetronome(config: MetronomeConfig) {
     setPulse(null);
   }, []);
 
+  // Continuous beat position read straight off the audio clock. Stable identity
+  // so callers can poll it from a rAF loop without re-rendering on every tick.
+  const getPosition = useCallback(() => engineRef.current!.getPositionBeats(), []);
+
   const toggle = useCallback(() => {
     if (engineRef.current!.running) {
       engineRef.current!.stop();
@@ -58,5 +62,5 @@ export function useMetronome(config: MetronomeConfig) {
     }
   }, []);
 
-  return { playing, pulse, start, stop, toggle };
+  return { playing, pulse, start, stop, toggle, getPosition };
 }

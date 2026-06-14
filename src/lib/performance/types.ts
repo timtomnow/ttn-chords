@@ -10,8 +10,24 @@
 
 import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import type { Song } from '@/types';
+import type { Song, TimeSignature } from '@/types';
 import type { ChordClick } from '@/components/chords/ChordLine';
+
+/**
+ * The shared musical clock the shell owns (built on the metronome engine). A
+ * `beatClock` view drives its motion from `getPosition()` — quarter-note beats
+ * since play started — so the visual scroll is locked to the audible click. The
+ * metronome control in the shell footer is this transport's play/tempo UI.
+ */
+export type Transport = {
+  playing: boolean;
+  tempo: number;
+  timeSignature: TimeSignature;
+  /** Continuous position in quarter-note beats since play started; 0 when stopped. */
+  getPosition: () => number;
+  toggle: () => void;
+  setTempo: (bpm: number) => void;
+};
 
 /** Shared playback clock the shell owns and views react to. */
 export type PlaybackState = {
@@ -36,6 +52,8 @@ export type PerformanceViewProps = {
   fontScale: number;
   /** Shared play/speed clock. Views implement motion from this. */
   playback: PlaybackState;
+  /** Beat-accurate transport (metronome clock). Used by `beatClock` views. */
+  transport: Transport;
   /** Called when auto-motion reaches the end, so the shell can stop/advance. */
   onReachEnd?: () => void;
   /** Chord taps (open the chart popover). Optional per view. */
@@ -50,6 +68,12 @@ export type ViewCapabilities = {
   zoom?: boolean;
   /** Show the transpose +/- control. */
   transpose?: boolean;
+  /**
+   * View drives its motion from the shared beat `transport` (the metronome
+   * clock) rather than the shell's px/sec auto-scroll. The shell hides its
+   * auto-scroll play/speed controls; the metronome button is the play control.
+   */
+  beatClock?: boolean;
 };
 
 export type PerformanceViewDef = {

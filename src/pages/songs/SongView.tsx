@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Minus, Pencil, Play, Plus } from 'lucide-react';
+import { ArrowLeft, MoveHorizontal, Minus, Pencil, Play, Plus } from 'lucide-react';
 import { useRhythmPatternsByIds, useRhythmSymbolMap, useSong } from '@/db/repo';
 import { ChordLine } from '@/components/chords/ChordLine';
 import { ChordChart } from '@/components/chords/ChordChart';
@@ -66,6 +66,9 @@ function View({ song }: { song: Song }) {
         <div className="flex gap-2">
           <button className="btn-secondary" onClick={() => navigate('edit')}>
             <Pencil size={15} /> Edit
+          </button>
+          <button className="btn-secondary" onClick={() => navigate('tag')} title="Tag beats by playing along">
+            <MoveHorizontal size={15} /> Tag beats
           </button>
           <button className="btn-primary" onClick={() => navigate('perform')}>
             <Play size={15} /> Perform

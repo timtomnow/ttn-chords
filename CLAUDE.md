@@ -55,6 +55,7 @@ src/
     ttnBackup.ts   window.TTNBackupAdapter install + restore opener
     chords/        bundled chord library + instrument defaults (Phase 1)
     music.ts       transpose / chord parsing (Phase 1)
+    timeline.ts    flatten per-section beats → one absolute beat timeline (Phase 12)
     chordpro.ts    ChordPro parse/serialize (Phase 2)
   pages/           Songs, Setlists, Reports, Settings (sub-routes per phase)
   types.ts         All entity types — one source of truth

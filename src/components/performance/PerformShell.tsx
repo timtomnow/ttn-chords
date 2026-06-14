@@ -18,9 +18,12 @@ import {
 } from 'lucide-react';
 import { ChordPopover } from '@/components/chords/ChordPopover';
 import { PerformMetronome } from '@/components/tools/PerformMetronome';
+import { useMetronome } from '@/components/tools/useMetronome';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { getView, listViews } from '@/lib/performance/registry';
-import { saveSettings } from '@/db/repo';
+import type { Transport } from '@/lib/performance/types';
+import { saveSettings, useSettings } from '@/db/repo';
+import { DEFAULT_METRONOME, clampTempo } from '@/lib/metronome';
 import { preferFlatsForKey } from '@/lib/music';
 import '@/components/performance/views'; // register built-in views
 import type { Song } from '@/types';
@@ -62,10 +65,37 @@ export function PerformShell({
 
   const { held } = useWakeLock(true);
 
+  // Shared transport: one metronome instance drives both the audible click and
+  // a beat-clock view's scroll. Seeded from the song; tempo nudgeable live.
+  const settings = useSettings();
+  const prefs = { ...DEFAULT_METRONOME, ...settings?.metronome };
+  const [tempo, setTempo] = useState(() => clampTempo(song.tempo ?? prefs.tempo));
+  const timeSignature = song.timeSignature ?? { beats: prefs.beatsPerMeasure, unit: 4 };
+  const metro = useMetronome({
+    tempo,
+    beatsPerMeasure: timeSignature.beats,
+    subdivision: 1,
+    soundEnabled: prefs.soundEnabled,
+    sound: prefs.sound,
+    accentDownbeat: prefs.accentDownbeat,
+    volume: prefs.volume,
+  });
+
+  const transport: Transport = {
+    playing: metro.playing,
+    tempo,
+    timeSignature,
+    getPosition: metro.getPosition,
+    toggle: metro.toggle,
+    setTempo: (bpm) => setTempo(clampTempo(bpm)),
+  };
+
   // Reset per-song state when navigating a setlist.
   useEffect(() => {
     setTranspose(setlist?.transpose ?? 0);
     setPlaying(false);
+    setTempo(clampTempo(song.tempo ?? prefs.tempo));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [song.id, setlist?.transpose]);
 
   const flats = preferFlatsForKey(song.key);
@@ -116,6 +146,7 @@ export function PerformShell({
             preferFlats={flats}
             fontScale={fontScale}
             playback={{ playing, speed }}
+            transport={transport}
             onReachEnd={() => setPlaying(false)}
             onChordClick={
               caps.transpose !== false
@@ -186,7 +217,19 @@ export function PerformShell({
           </>
         )}
 
-        <PerformMetronome key={song.id} song={song} />
+        <PerformMetronome
+          playing={metro.playing}
+          tempo={tempo}
+          pulse={metro.pulse}
+          onToggle={metro.toggle}
+          onTempoChange={(bpm) => setTempo(clampTempo(bpm))}
+          flash={{
+            enabled: prefs.flashEnabled,
+            shape: prefs.flashShape,
+            accentColor: prefs.flashAccentColor,
+            beatColor: prefs.flashBeatColor,
+          }}
+        />
 
         {setlist && (
           <button

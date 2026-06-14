@@ -2,3 +2,4 @@
 // Add new performance views here (and nowhere else needs to change).
 import './ScrollView';
 import './LyricsView';
+import './HorizontalView';
