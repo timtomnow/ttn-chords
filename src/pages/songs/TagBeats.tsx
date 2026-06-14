@@ -247,22 +247,14 @@ function Tagger({ song }: { song: Song }) {
         </div>
       )}
 
-      {phase === 'countin' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2">
-          <p className="text-sm uppercase tracking-wide text-ink-500">Count-in</p>
-          <p className="text-7xl font-bold tabular-nums text-accent">
-            {Math.min(ts.beats, Math.floor(posBeat) + 1)}
-          </p>
-        </div>
-      )}
-
-      {phase === 'recording' && (
+      {(phase === 'countin' || phase === 'recording') && (
         <RecordingView
           items={items}
           index={index}
           tempo={tempo}
           transpose={0}
           flats={flats}
+          countNum={phase === 'countin' ? Math.max(1, ts.beats - Math.floor(posBeat)) : 0}
           onTap={tap}
           onDone={finishRecording}
         />
@@ -293,6 +285,7 @@ function RecordingView({
   tempo,
   transpose,
   flats,
+  countNum,
   onTap,
   onDone,
 }: {
@@ -301,12 +294,16 @@ function RecordingView({
   tempo: number;
   transpose: number;
   flats: boolean;
+  /** > 0 during the count-in (the beats remaining); 0 once recording. */
+  countNum: number;
   onTap: () => void;
   onDone: () => void;
 }) {
   const current = items[index];
-  const upcoming = items.slice(index + 1, index + 4);
+  const next1 = items[index + 1];
+  const next2 = items[index + 2];
   const show = (c: string) => (c ? transposeChordSymbol(c, transpose, flats) : '·');
+  const counting = countNum > 0;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -320,25 +317,64 @@ function RecordingView({
         </button>
       </div>
 
+      {/* Count-in banner — shown on top while the chords stay visible so you
+          can see what's coming and get ready. */}
+      {counting && (
+        <div className="mb-2 flex items-center justify-center gap-3 rounded-2xl bg-accent/10 py-2">
+          <span className="text-sm uppercase tracking-wide text-ink-500">Count-in</span>
+          <span className="text-4xl font-bold tabular-nums text-accent">{countNum}</span>
+        </div>
+      )}
+
       <button
         type="button"
         onPointerDown={(e) => {
           e.preventDefault();
           onTap();
         }}
-        className="flex flex-1 select-none flex-col items-center justify-center gap-6 rounded-3xl border-2 border-dashed border-accent/40 bg-accent/5 active:bg-accent/15"
+        className={[
+          'flex flex-1 select-none flex-col items-center justify-center gap-6 rounded-3xl border-2 border-dashed transition-colors',
+          counting
+            ? 'border-ink-300 bg-ink-100/50 dark:border-ink-700 dark:bg-ink-900/40'
+            : 'border-accent/40 bg-accent/5 active:bg-accent/15',
+        ].join(' ')}
       >
-        <span className="text-sm uppercase tracking-wide text-ink-500">Tap, or press Space / B / F, on the beat</span>
-        <span className="text-7xl font-bold text-accent">{show(current.chord)}</span>
-        {current.context && <span className="text-xl text-ink-600 dark:text-ink-300">{current.context}</span>}
-        <span className="mt-4 flex items-center gap-3 text-2xl text-ink-400">
-          {upcoming.map((u, i) => (
-            <span key={i} className="opacity-60">
-              {show(u.chord)}
-            </span>
-          ))}
+        <span className="text-sm uppercase tracking-wide text-ink-500">
+          {counting ? 'Get ready…' : 'Tap, or press Space / B / F, on the beat'}
         </span>
+
+        {/* Current block (prominent) + the next one(s) to look ahead. On each
+            tap the index advances so the next block slides into the main spot. */}
+        <div className="flex items-end justify-center gap-10">
+          <ChordBlock chord={show(current.chord)} context={current.context} variant="current" />
+          {next1 && <ChordBlock chord={show(next1.chord)} context={next1.context} variant="next" />}
+          {next2 && <ChordBlock chord={show(next2.chord)} context={next2.context} variant="upcoming" />}
+        </div>
       </button>
+    </div>
+  );
+}
+
+/** One chord + its lyric in the recording view. `current` is the prominent one
+ * you're tagging now; `next`/`upcoming` are dimmer look-aheads. */
+function ChordBlock({
+  chord,
+  context,
+  variant,
+}: {
+  chord: string;
+  context?: string;
+  variant: 'current' | 'next' | 'upcoming';
+}) {
+  const styles = {
+    current: { wrap: '', chord: 'text-7xl font-bold text-accent', ctx: 'text-xl text-ink-600 dark:text-ink-300' },
+    next: { wrap: 'opacity-70', chord: 'text-5xl font-semibold text-ink-500', ctx: 'text-base text-ink-400' },
+    upcoming: { wrap: 'opacity-40', chord: 'text-3xl font-semibold text-ink-500', ctx: 'text-sm text-ink-400' },
+  }[variant];
+  return (
+    <div className={['flex flex-col items-center gap-2', styles.wrap].join(' ')}>
+      <span className={styles.chord}>{chord}</span>
+      {context && <span className={['max-w-[8rem] truncate', styles.ctx].join(' ')}>{context}</span>}
     </div>
   );
 }
