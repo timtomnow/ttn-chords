@@ -7,7 +7,10 @@ export function BottomNav() {
       className="fixed inset-x-0 bottom-0 z-30 border-t border-ink-200 bg-white/90 backdrop-blur dark:border-ink-800 dark:bg-ink-900/90 md:hidden"
       style={{ paddingBottom: 'var(--safe-bottom)' }}
     >
-      <div className="mx-auto grid max-w-md grid-cols-4 px-2 pb-2 pt-1">
+      <div
+        className="mx-auto grid max-w-md px-2 pb-2 pt-1"
+        style={{ gridTemplateColumns: `repeat(${NAV.length}, minmax(0, 1fr))` }}
+      >
         {NAV.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}

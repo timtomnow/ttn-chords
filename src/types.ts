@@ -353,6 +353,44 @@ export type ReportTemplate = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────
+// Music tools (metronome + tuner) — preferences only; the tools are stateless
+// otherwise. Stored inside AppSettings so they travel with ttn-backup.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Built-in click voices the metronome can synthesize via Web Audio. */
+export type MetronomeSound = 'beep' | 'click' | 'woodblock' | 'cowbell';
+
+/** How (or whether) the metronome flashes the screen in time. */
+export type MetronomeFlashShape = 'circle' | 'border' | 'fullscreen';
+
+export type MetronomeSettings = {
+  tempo: number; // BPM
+  /** Time-signature numerator: accent lands every N beats. */
+  beatsPerMeasure: number;
+  /** Clicks per beat: 1 = quarters, 2 = eighths, 3 = triplets, 4 = sixteenths. */
+  subdivision: number;
+  soundEnabled: boolean;
+  sound: MetronomeSound;
+  /** Two-sound mode: give beat 1 a distinct accent voice (vs. every beat equal). */
+  accentDownbeat: boolean;
+  /** 0–1. */
+  volume: number;
+  flashEnabled: boolean;
+  flashShape: MetronomeFlashShape;
+  /** Flash color for beat 1 (the accent). */
+  flashAccentColor: string;
+  /** Flash color for the other beats. */
+  flashBeatColor: string;
+};
+
+export type TunerSettings = {
+  /** Instrument whose tuning drives the string targets. '' = chromatic. */
+  instrumentId: string;
+  /** Reference pitch for A4 in Hz (default 440). */
+  a4: number;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 // Shared: photos/images + app settings
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -382,5 +420,9 @@ export type AppSettings = {
   performanceViewId?: string;
   defaultTimeSignature?: TimeSignature;
   defaultTempo?: number;
+  /** Metronome tool preferences (Music Tools). Additive; non-indexed. */
+  metronome?: MetronomeSettings;
+  /** Tuner tool preferences (Music Tools). Additive; non-indexed. */
+  tuner?: TunerSettings;
   updatedAt: number;
 };

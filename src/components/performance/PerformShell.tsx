@@ -17,6 +17,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { ChordPopover } from '@/components/chords/ChordPopover';
+import { PerformMetronome } from '@/components/tools/PerformMetronome';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { getView, listViews } from '@/lib/performance/registry';
 import { saveSettings } from '@/db/repo';
@@ -184,6 +185,8 @@ export function PerformShell({
             </ControlGroup>
           </>
         )}
+
+        <PerformMetronome key={song.id} song={song} />
 
         {setlist && (
           <button

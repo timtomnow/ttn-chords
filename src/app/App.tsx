@@ -5,6 +5,7 @@ import { Songs } from '@/pages/Songs';
 import { Setlists } from '@/pages/Setlists';
 import { Reports } from '@/pages/Reports';
 import { ReportPrint } from '@/pages/reports/ReportPrint';
+import { Tools } from '@/pages/Tools';
 import { Settings } from '@/pages/Settings';
 import { ThemeProvider } from './theme';
 import { installTtnBackupAdapter } from '@/lib/ttnBackup';
@@ -31,6 +32,7 @@ export function App() {
           <Route path="/songs/*" element={<Songs />} />
           <Route path="/setlists/*" element={<Setlists />} />
           <Route path="/reports/*" element={<Reports />} />
+          <Route path="/tools/*" element={<Tools />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/songs" replace />} />
         </Route>
