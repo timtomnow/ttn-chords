@@ -1,12 +1,31 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import fs from 'node:fs';
 import path from 'node:path';
 
 // Served at https://<user>.github.io/ttn-chords/ on GitHub Pages.
 // Vite uses this as the base for asset URLs and as `import.meta.env.BASE_URL`,
 // which the router reads (main.tsx) to prefix all routes.
 const BASE = '/ttn-chords/';
+
+// GitHub Pages has no server-side rewrite, so a cold load of a client-side
+// route (e.g. /ttn-chords/tools/tuner, or a hard refresh) returns 404 before
+// the service worker exists. Pages serves 404.html for unknown paths, so we
+// copy the built index.html to 404.html — the SPA then boots and the router
+// takes over. (Once installed, offline navigations are handled by the SW's
+// own index.html navigation fallback.)
+function spaPagesFallback(): Plugin {
+  return {
+    name: 'spa-pages-404-fallback',
+    apply: 'build',
+    closeBundle() {
+      const index = path.resolve(__dirname, 'dist/index.html');
+      const fallback = path.resolve(__dirname, 'dist/404.html');
+      if (fs.existsSync(index)) fs.copyFileSync(index, fallback);
+    },
+  };
+}
 
 export default defineConfig({
   base: BASE,
@@ -56,6 +75,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
       },
     }),
+    spaPagesFallback(),
   ],
   resolve: {
     alias: {
