@@ -2,15 +2,16 @@
 // chords are presented one at a time; you tap a single button (or press Space,
 // B, or F) on the beat each chord lands. Each tap reads the transport's position,
 // and on finish the absolute onsets are converted to section-relative beats
-// (snapped to a 1/16 grid) and written to the song. A fine-tune editor then
-// lets you drag each chord on a beat grid before saving.
+// (snapped to the chosen grid, default 1/8) and written to the song. A fine-tune
+// editor then lets you drag each chord on a beat grid, re-quantize everything,
+// and insert/delete whole bars before saving.
 //
 // This is the easy way to put the beat-timing layer (ChordEvent.beat) onto a
 // song without hand-typing @beat in ChordPro; it powers the Highway view.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Eraser, Minus, Plus, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Eraser, Minus, Plus, RotateCcw, Trash2, Wand2 } from 'lucide-react';
 import { updateSong, useSettings, useSong } from '@/db/repo';
 import { useMetronome } from '@/components/tools/useMetronome';
 import { parseBeat } from '@/lib/chordpro';
@@ -19,9 +20,11 @@ import { preferFlatsForKey, transposeChordSymbol } from '@/lib/music';
 import {
   DEFAULT_TEMPO,
   DEFAULT_TS,
+  beatsToNumber,
   buildTimeline,
   quarterBeatsPerBar,
 } from '@/lib/timeline';
+import type { SectionSpan } from '@/lib/timeline';
 import type { Beats, Section, Song } from '@/types';
 
 type Phase = 'idle' | 'countin' | 'recording' | 'review';
@@ -40,10 +43,39 @@ const GRIDS = [
   { label: '1/8', den: 8 },
   { label: '1/16', den: 16 },
 ] as const;
+const DEFAULT_GRID = 8;
 const PX_PER_BEAT = 56;
+const EPS = 1e-9;
 
 function snap(x: number): Beats {
   return parseBeat(String(Math.max(0, x))) ?? { n: Math.round(Math.max(0, x)), d: 1 };
+}
+
+/** Snap a quarter-beat value onto the chosen grid (grid is a note denominator:
+ * 4 = quarter, 8 = eighth, 16 = sixteenth → step = 4/grid quarter-beats). */
+function snapToGrid(x: number, grid: number): Beats {
+  const step = 4 / grid;
+  return snap(Math.round(Math.max(0, x) / step) * step);
+}
+
+/** A 1/4 · 1/8 · 1/16 segmented control, shared by the start screen + editor. */
+function SnapSelector({ grid, setGrid }: { grid: number; setGrid: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1 rounded-xl bg-ink-100 p-1 dark:bg-ink-800">
+      {GRIDS.map((g) => (
+        <button
+          key={g.den}
+          onClick={() => setGrid(g.den)}
+          className={[
+            'rounded-lg px-2 py-0.5 text-sm font-medium',
+            grid === g.den ? 'bg-accent text-accent-fg' : 'hover:bg-ink-200 dark:hover:bg-ink-700',
+          ].join(' ')}
+        >
+          {g.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function TagBeats() {
@@ -104,7 +136,7 @@ function Tagger({ song }: { song: Song }) {
   const [index, setIndex] = useState(0);
   const [posBeat, setPosBeat] = useState(0);
   const [working, setWorking] = useState<Section[]>(song.sections);
-  const [grid, setGrid] = useState(16);
+  const [grid, setGrid] = useState(DEFAULT_GRID);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const recorded = useRef<(number | undefined)[]>([]);
 
@@ -135,12 +167,12 @@ function Tagger({ song }: { song: Song }) {
       const origin = Math.floor(minAbs / secBar) * secBar;
       for (const { it, abs } of secItems) {
         const ev = eventsById.get(it.eventId);
-        if (ev) ev.beat = snap(abs - origin);
+        if (ev) ev.beat = snapToGrid(abs - origin, grid);
       }
     }
     setWorking(next);
     setPhase('review');
-  }, [items, metro, song.sections, ts]);
+  }, [items, metro, song.sections, ts, grid]);
 
   const tap = useCallback(() => {
     if (phase !== 'recording') return;
@@ -240,6 +272,10 @@ function Tagger({ song }: { song: Song }) {
               <Plus size={14} />
             </button>
             <span className="text-sm text-ink-500">BPM</span>
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <span className="label">Snap</span>
+            <SnapSelector grid={grid} setGrid={setGrid} />
           </div>
           <button className="btn-primary px-6 py-2 text-base" onClick={start}>
             Start
@@ -479,26 +515,95 @@ function ReviewEditor({
     setSelectedId(null);
   }
 
+  /** Re-snap every tagged chord in the song onto the current grid. */
+  function quantizeAll() {
+    setWorking((prev) =>
+      prev.map((s) => ({
+        ...s,
+        lines: s.lines.map((l) => ({
+          ...l,
+          events: l.events.map((e) =>
+            e.beat ? { ...e, beat: snapToGrid(beatsToNumber(e.beat), grid) } : e,
+          ),
+        })),
+      })),
+    );
+  }
+
+  // ── Bar insert / delete ────────────────────────────────────────────────
+  // Beats are section-relative, so a bar op shifts every event at or after the
+  // bar within its section by ±one bar; the section length is derived from its
+  // last event, so the timeline (and all repeats) follow automatically.
+
+  /** The section span an absolute beat falls in (last span as a fallback). */
+  function spanForBeat(absBeat: number) {
+    return (
+      timeline.sections.find(
+        (s) => absBeat >= s.startBeat - EPS && absBeat < s.startBeat + s.lengthBeats - EPS,
+      ) ?? timeline.sections[timeline.sections.length - 1]
+    );
+  }
+
+  /** Shift events in a section whose beat ≥ `fromBeat` by `delta` quarter-beats. */
+  function shiftSectionEvents(sectionIndex: number, fromBeat: number, delta: number) {
+    setWorking((prev) =>
+      prev.map((s, si) =>
+        si !== sectionIndex
+          ? s
+          : {
+              ...s,
+              lines: s.lines.map((l) => ({
+                ...l,
+                events: l.events.map((e) => {
+                  if (!e.beat) return e;
+                  const v = beatsToNumber(e.beat);
+                  return v >= fromBeat - EPS ? { ...e, beat: snap(v + delta) } : e;
+                }),
+              })),
+            },
+      ),
+    );
+    setSelectedId(null);
+  }
+
+  /** Beat offset of `absBeat` within a single pass of its section. */
+  function beatWithinPass(span: SectionSpan, absBeat: number) {
+    const rel = absBeat - span.startBeat;
+    return rel - Math.floor((rel + EPS) / span.passBeats) * span.passBeats;
+  }
+
+  /** Insert one empty bar immediately before the bar starting at `absBeat`. */
+  function insertBar(absBeat: number) {
+    const span = spanForBeat(absBeat);
+    if (!span) return;
+    shiftSectionEvents(span.sectionIndex, beatWithinPass(span, absBeat), span.barBeats);
+  }
+
+  /** Remove a (blank) bar, pulling everything after it back by one bar. */
+  function deleteBar(bar: { absBeat: number }) {
+    const span = spanForBeat(bar.absBeat);
+    if (!span) return;
+    const start = beatWithinPass(span, bar.absBeat);
+    shiftSectionEvents(span.sectionIndex, start + span.barBeats, -span.barBeats);
+  }
+
+  /** A bar with no chord onset anywhere inside it — safe to delete. */
+  function isBlankBar(bar: { absBeat: number; beats: number }) {
+    return !timeline.items.some(
+      (it) => it.absBeat >= bar.absBeat - EPS && it.absBeat < bar.absBeat + bar.beats - EPS,
+    );
+  }
+
   const laneWidth = timeline.totalBeats * PX_PER_BEAT + 80;
 
   return (
     <div className="flex flex-1 flex-col">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="label">Snap</span>
-        <div className="flex items-center gap-1 rounded-xl bg-ink-100 p-1 dark:bg-ink-800">
-          {GRIDS.map((g) => (
-            <button
-              key={g.den}
-              onClick={() => setGrid(g.den)}
-              className={[
-                'rounded-lg px-2 py-0.5 text-sm font-medium',
-                grid === g.den ? 'bg-accent text-accent-fg' : 'hover:bg-ink-200 dark:hover:bg-ink-700',
-              ].join(' ')}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
+        <SnapSelector grid={grid} setGrid={setGrid} />
+        <button className="btn-secondary px-2 py-1" onClick={quantizeAll} title="Snap every chord to the grid">
+          <Wand2 size={14} /> Quantize
+        </button>
 
         <div className="ml-2 flex items-center gap-1">
           <button className="btn-secondary px-2 py-1 disabled:opacity-40" disabled={!selectedId} onClick={() => nudge(-1)} aria-label="Nudge earlier">
@@ -522,20 +627,50 @@ function ReviewEditor({
         </div>
       </div>
 
-      <p className="mb-2 text-xs text-ink-500">Drag a chord to move it; tap to select, then nudge or clear.</p>
+      <p className="mb-2 text-xs text-ink-500">
+        Drag a chord to move it; tap to select, then nudge or clear. Use{' '}
+        <Plus size={11} className="inline" /> to insert a bar (pushing the rest of the song over);
+        blank bars show <Trash2 size={11} className="inline" /> to delete them.
+      </p>
 
       <div ref={laneRef} className="relative flex-1 overflow-x-auto rounded-2xl border border-ink-200 dark:border-ink-800">
         <div className="relative h-full min-h-[16rem]" style={{ width: laneWidth }}>
           {/* Bar grid */}
-          {timeline.bars.map((bar) => (
-            <div key={bar.number} className="absolute inset-y-0" style={{ left: bar.absBeat * PX_PER_BEAT }}>
-              <div className="h-full w-px bg-ink-300 dark:bg-ink-700" />
-              <span className="absolute left-1 top-1 text-[10px] tabular-nums text-ink-400">{bar.number}</span>
-              {Array.from({ length: Math.max(0, Math.round(bar.beats) - 1) }, (_, k) => (
-                <div key={k} className="absolute inset-y-0 w-px bg-ink-200/70 dark:bg-ink-800/70" style={{ left: (k + 1) * PX_PER_BEAT }} />
-              ))}
-            </div>
-          ))}
+          {timeline.bars.map((bar) => {
+            const blank = isBlankBar(bar);
+            return (
+              <div key={bar.number} className="absolute inset-y-0" style={{ left: bar.absBeat * PX_PER_BEAT }}>
+                <div className="h-full w-px bg-ink-300 dark:bg-ink-700" />
+                <span className="absolute left-1 top-1 text-[10px] tabular-nums text-ink-400">{bar.number}</span>
+                {Array.from({ length: Math.max(0, Math.round(bar.beats) - 1) }, (_, k) => (
+                  <div key={k} className="absolute inset-y-0 w-px bg-ink-200/70 dark:bg-ink-800/70" style={{ left: (k + 1) * PX_PER_BEAT }} />
+                ))}
+                {/* Insert a bar before this one (nudged right on bar 1 so it
+                    isn't clipped at the lane's left edge). */}
+                <button
+                  onClick={() => insertBar(bar.absBeat)}
+                  className="absolute bottom-1 z-10 rounded-full bg-ink-100 p-1 text-ink-500 hover:bg-accent hover:text-accent-fg dark:bg-ink-800"
+                  style={{ left: bar.absBeat < EPS ? 2 : -10 }}
+                  title="Insert a bar here"
+                  aria-label="Insert a bar here"
+                >
+                  <Plus size={12} />
+                </button>
+                {/* Delete this bar if it's empty. */}
+                {blank && (
+                  <button
+                    onClick={() => deleteBar(bar)}
+                    className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-100 p-1.5 text-ink-500 hover:bg-rose-500 hover:text-white dark:bg-ink-800"
+                    style={{ left: (bar.beats / 2) * PX_PER_BEAT }}
+                    title="Delete this empty bar"
+                    aria-label="Delete this empty bar"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
 
           {/* Chord markers */}
           {timeline.items.map((item) => {
