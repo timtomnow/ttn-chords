@@ -1,6 +1,6 @@
 // Play-along beat tagging. The metronome plays a count-in then the song's
-// chords are presented one at a time; you tap a single button (or Space) on the
-// beat each chord lands. Each tap reads the transport's continuous position,
+// chords are presented one at a time; you tap a single button (or press Space,
+// B, or F) on the beat each chord lands. Each tap reads the transport's position,
 // and on finish the absolute onsets are converted to section-relative beats
 // (snapped to a 1/16 grid) and written to the song. A fine-tune editor then
 // lets you drag each chord on a beat grid before saving.
@@ -164,11 +164,14 @@ function Tagger({ song }: { song: Song }) {
     return () => cancelAnimationFrame(raf);
   }, [phase, metro, barBeats]);
 
-  // Space bar taps during recording.
+  // Keyboard taps during recording: Space, B, or F. `e.repeat` is ignored so a
+  // held key doesn't auto-advance through every chord, and Space is prevented
+  // from scrolling the page.
   useEffect(() => {
     if (phase !== 'recording') return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
+      if (e.repeat) return;
+      if (e.code === 'Space' || e.code === 'KeyB' || e.code === 'KeyF') {
         e.preventDefault();
         tap();
       }
@@ -223,9 +226,9 @@ function Tagger({ song }: { song: Song }) {
       {phase === 'idle' && (
         <div className="mx-auto max-w-md space-y-6 py-8 text-center">
           <p className="text-ink-600 dark:text-ink-300">
-            Press <strong>Start</strong> for a one-bar count-in, then tap the big button (or the
-            <strong> spacebar</strong>) on the beat as each chord lands. You can fine-tune
-            everything afterwards.
+            Press <strong>Start</strong> for a one-bar count-in, then tap the big button (or press
+            <strong> Space</strong>, <strong>B</strong>, or <strong>F</strong>) on the beat as each
+            chord lands. You can fine-tune everything afterwards.
           </p>
           <div className="flex items-center justify-center gap-2">
             <span className="label">Tempo</span>
@@ -325,7 +328,7 @@ function RecordingView({
         }}
         className="flex flex-1 select-none flex-col items-center justify-center gap-6 rounded-3xl border-2 border-dashed border-accent/40 bg-accent/5 active:bg-accent/15"
       >
-        <span className="text-sm uppercase tracking-wide text-ink-500">Tap on the beat</span>
+        <span className="text-sm uppercase tracking-wide text-ink-500">Tap, or press Space / B / F, on the beat</span>
         <span className="text-7xl font-bold text-accent">{show(current.chord)}</span>
         {current.context && <span className="text-xl text-ink-600 dark:text-ink-300">{current.context}</span>}
         <span className="mt-4 flex items-center gap-3 text-2xl text-ink-400">
