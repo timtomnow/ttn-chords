@@ -17,12 +17,14 @@ import { useChartResolver } from '@/components/chords/useChartResolver';
 import { RhythmChart } from '@/components/rhythm/RhythmChart';
 import { defaultLabelForKind } from '@/lib/chordpro';
 import { preferFlatsForKey, transposeChordSymbol } from '@/lib/music';
-import { uniqueChords } from '@/lib/song';
+import { sectionsOf, sortedDifficulties, uniqueChords } from '@/lib/song';
 import { registerBlock } from '../registry';
 import type { BlockEditorProps, BlockRenderProps } from '../types';
 
 type SongConfig = {
   songId?: string;
+  /** Difficulty variant to render; falls back to the song default. */
+  difficultyId?: string;
   transpose: number;
   showTitle: boolean;
   showCharts: boolean;
@@ -35,6 +37,7 @@ type SongConfig = {
 function cfg(c: Record<string, unknown>): SongConfig {
   return {
     songId: typeof c.songId === 'string' && c.songId ? c.songId : undefined,
+    difficultyId: typeof c.difficultyId === 'string' && c.difficultyId ? c.difficultyId : undefined,
     transpose: typeof c.transpose === 'number' ? c.transpose : 0,
     showTitle: c.showTitle !== false,
     showCharts: c.showCharts === true,
@@ -53,11 +56,13 @@ function Render({ block, mode }: BlockRenderProps) {
   const { resolve } = useChartResolver();
 
   const sectionIds = c.sectionIds;
+  const difficultyId = c.difficultyId;
   const sections = useMemo(() => {
     if (!song) return [];
-    if (!sectionIds) return song.sections;
-    return song.sections.filter((s) => sectionIds.includes(s.id));
-  }, [song, sectionIds]);
+    const all = sectionsOf(song, difficultyId);
+    if (!sectionIds) return all;
+    return all.filter((s) => sectionIds.includes(s.id));
+  }, [song, difficultyId, sectionIds]);
 
   const patternIds = useMemo(
     () => sections.map((s) => s.rhythmPatternId).filter((id): id is string => Boolean(id)),
@@ -161,6 +166,8 @@ function Editor({ block, onChange }: BlockEditorProps) {
   const c = cfg(block.config);
   const songs = useSongs();
   const song = useSong(c.songId);
+  const difficulties = song ? sortedDifficulties(song) : [];
+  const editorSections = song ? sectionsOf(song, c.difficultyId) : [];
 
   const toggle = (key: keyof SongConfig) => () => onChange({ [key]: !c[key] });
 
@@ -171,7 +178,7 @@ function Editor({ block, onChange }: BlockEditorProps) {
         <select
           className="input"
           value={c.songId ?? ''}
-          onChange={(e) => onChange({ songId: e.target.value, sectionIds: null })}
+          onChange={(e) => onChange({ songId: e.target.value, difficultyId: undefined, sectionIds: null })}
         >
           <option value="">— choose a song —</option>
           {songs?.map((s) => (
@@ -181,6 +188,26 @@ function Editor({ block, onChange }: BlockEditorProps) {
           ))}
         </select>
       </label>
+
+      {difficulties.length > 1 && (
+        <label className="block">
+          <span className="label mb-1">Difficulty</span>
+          <select
+            className="input"
+            value={c.difficultyId ?? ''}
+            onChange={(e) =>
+              onChange({ difficultyId: e.target.value || undefined, sectionIds: null })
+            }
+          >
+            <option value="">Default</option>
+            {difficulties.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.label ? `${d.label} (L${d.level})` : `Level ${d.level}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="flex items-center gap-2">
         <span className="label">Transpose</span>
@@ -211,11 +238,11 @@ function Editor({ block, onChange }: BlockEditorProps) {
         ))}
       </div>
 
-      {song && song.sections.length > 0 && (
+      {song && editorSections.length > 0 && (
         <div>
           <span className="label mb-1">Sections</span>
           <div className="space-y-1">
-            {song.sections.map((s) => {
+            {editorSections.map((s) => {
               const checked = c.sectionIds === null || c.sectionIds.includes(s.id);
               return (
                 <label key={s.id} className="flex items-center gap-2 text-sm">
@@ -223,7 +250,7 @@ function Editor({ block, onChange }: BlockEditorProps) {
                     type="checkbox"
                     checked={checked}
                     onChange={() => {
-                      const all = song.sections.map((x) => x.id);
+                      const all = editorSections.map((x) => x.id);
                       const current = c.sectionIds === null ? all : c.sectionIds;
                       const next = checked
                         ? current.filter((id) => id !== s.id)

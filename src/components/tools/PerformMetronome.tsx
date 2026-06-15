@@ -3,10 +3,9 @@
 // beat-clock view's scroll lock together) and passes its state in. Tempo can be
 // nudged live without touching the stored song.
 
-import { Minus, Plus } from 'lucide-react';
 import { MetronomeFlash } from './MetronomeFlash';
 import type { MetronomePulse } from './useMetronome';
-import { clampTempo } from '@/lib/metronome';
+import { TempoInput } from '@/components/inputs/TempoInput';
 import type { MetronomeFlashShape } from '@/types';
 
 // A small metronome glyph (lucide has no dedicated one).
@@ -56,7 +55,7 @@ export function PerformMetronome({
       <div className="flex items-center gap-1 rounded-xl bg-ink-100 px-1.5 py-1 dark:bg-ink-800">
         <button
           className={[
-            'flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium transition',
+            'flex items-center rounded-lg p-1 transition',
             playing ? 'bg-accent text-accent-fg' : 'hover:bg-ink-200 dark:hover:bg-ink-700',
           ].join(' ')}
           onClick={onToggle}
@@ -64,22 +63,8 @@ export function PerformMetronome({
           aria-pressed={playing}
         >
           <MetronomeIcon size={16} />
-          <span className="tabular-nums">{tempo}</span>
         </button>
-        <button
-          className="rounded-lg p-1 hover:bg-ink-200 dark:hover:bg-ink-700"
-          onClick={() => onTempoChange(clampTempo(tempo - 1))}
-          aria-label="Slower"
-        >
-          <Minus size={16} />
-        </button>
-        <button
-          className="rounded-lg p-1 hover:bg-ink-200 dark:hover:bg-ink-700"
-          onClick={() => onTempoChange(clampTempo(tempo + 1))}
-          aria-label="Faster"
-        >
-          <Plus size={16} />
-        </button>
+        <TempoInput value={tempo} onChange={onTempoChange} ariaLabel="Metronome tempo" />
       </div>
     </>
   );

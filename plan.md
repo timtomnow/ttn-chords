@@ -54,8 +54,9 @@ live under the same domain and back up the same way.
 Source of truth: [`src/types.ts`](src/types.ts). Tables: [`src/db/schema.ts`](src/db/schema.ts).
 
 ```
-Song ── sections[] ── lines[] ── events[] (ChordEvent: chord + charIndex + optional beat)
-Setlist ── entries[] (SetlistEntry: songId + per-performance transpose/capo/notes)
+Song ── difficulties[] (SongDifficulty: level 1–5 + sections[]) ── lines[] ── events[]
+        (ChordEvent: chord + charIndex + optional beat)
+Setlist ── entries[] (SetlistEntry: songId + difficultyId? + per-performance transpose/capo/notes)
 RhythmPattern (reusable strum grid; attached to sections)
 Instrument (user-defined; bundled instruments are static data)
 ChordDefinition (user-defined/overridden charts; bundled charts are static data)
@@ -81,6 +82,19 @@ AppSettings (singleton: accent, myInstrument, defaults)
   ship as **static data** in `src/lib/chords/` — versioned in code, not in the
   DB, so backups stay small. The `instruments` / `chordDefinitions` tables hold
   only **user-created or user-overridden** entries.
+- **Starter library bundles** (`src/lib/library/`) ship songs/setlists as static
+  data too, but they are **opt-in**: the user *syncs* a bundle (Settings →
+  Starter library) and its songs are imported into the `songs` table as real
+  rows. Conflicts (same title+artist) prompt overwrite vs. `_N` duplicate; nothing
+  the user already has is touched unless they choose to overwrite.
+
+### Difficulty variants
+
+- A **Song** holds `difficulties: SongDifficulty[]` (always ≥1), each a level-1–5
+  variant with its **own** `sections` (chords + beat timing). Resolve with
+  `lib/song.ts` `sectionsOf()` / `getDifficulty()`; the Perform view + read view
+  toggle between variants; each is tagged for beats independently. Pre-v3 songs
+  migrate their flat `sections` into one level-3 default variant (Dexie v3).
 
 ---
 
@@ -331,6 +345,36 @@ engine, and the performance-view registry).
   (reusing `parseBeat`). A fine-tune editor then lets you drag each chord on the
   grid (1/4 · 1/8 · 1/16 snap), nudge, or clear before saving. This also
   delivers the long-parked "visual per-event beat picker".
+
+### Phase 13 — Starter library, difficulty variants, perform-view polish ✅
+Distribute the app pre-loaded and broaden who can use it. Dexie **v3** (one
+migration: wrap each song's flat `sections` into a default difficulty).
+
+- **Editable tempo** (`src/components/inputs/TempoInput.tsx`): click the BPM
+  number to type a new value (string-backed so it can go blank; reverts on
+  blank/invalid), keeping −/+ buttons. Used in the Perform metronome, the
+  standalone Metronome tool, and Tag beats.
+- **In-perform metronome settings**: `MetronomeSettingsFields` factored out of
+  `MetronomePanel`; a gear button in `PerformShell` opens a sheet to change
+  flash/colors/sound/voice/volume live (persists to `AppSettings.metronome`).
+- **Admin / authoring mode** (`AppSettings.adminMode`, `useAdminMode()`):
+  Settings toggle (default off). Light users get a read+perform UI (bundle sync
+  still allowed); admins get create/edit/tag/delete + library managers. A
+  stepping stone to future teacher/student roles.
+- **Song difficulty variants** (`Song.difficulties[]`, `SongDifficulty`): per-song
+  level-1–5 arrangements, each with its own sections + beat timing. Switcher in
+  the Perform shell + read view; `SongEditor` difficulty manager (add / duplicate
+  / level / label / default / delete); `TagBeats` tags a chosen variant
+  (`?d=<id>`). Helpers in `lib/song.ts` (`sectionsOf`, `getDifficulty`,
+  `sortedDifficulties`, `makeDifficulty`); `buildTimeline`/`hasAnyBeats` take an
+  optional `difficultyId`; report song block + setlist entries can pin a variant.
+  Beat writes go through `repo.updateDifficultySections`.
+- **Starter library bundles** (`src/lib/library/`): static `SongBundle`s
+  (`listBundles()`); opt-in **Sync** in Settings imports a bundle's songs as real
+  rows. Pure planner (`planBundleImport`, `nextDuplicateTitle`, unit-tested) +
+  `repo.importBundle` (one transaction, title+artist conflict → overwrite vs.
+  `_N` duplicate, apply-to-all or per-song; setlist song refs remapped). Legacy
+  JSON/backup imports normalize old flat-`sections` songs to the v3 shape.
 
 ---
 

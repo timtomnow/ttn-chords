@@ -6,7 +6,7 @@ import { Grid3x3 } from 'lucide-react';
 import { useSongs } from '@/db/repo';
 import { ChordChart } from '@/components/chords/ChordChart';
 import { useChartResolver } from '@/components/chords/useChartResolver';
-import { uniqueChords } from '@/lib/song';
+import { sectionsOf, uniqueChords } from '@/lib/song';
 import { registerBlock } from '../registry';
 import type { BlockEditorProps, BlockRenderProps } from '../types';
 
@@ -68,7 +68,7 @@ function Editor({ block, onChange }: BlockEditorProps) {
   function fillFromSong(songId: string) {
     const song = songs?.find((s) => s.id === songId);
     if (!song) return;
-    onChange({ chordsText: uniqueChords(song.sections, 0, false).join(', ') });
+    onChange({ chordsText: uniqueChords(sectionsOf(song), 0, false).join(', ') });
   }
 
   return (

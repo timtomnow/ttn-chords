@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import { newId } from '@/lib/id';
 import type {
   AppSettings,
   ChordDefinition,
@@ -12,7 +13,7 @@ import type {
 } from '@/types';
 
 /** Bumped whenever the on-disk shape changes. Written into JSON exports. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export class TtnChordsDB extends Dexie {
   songs!: Table<Song, string>;
@@ -45,6 +46,25 @@ export class TtnChordsDB extends Dexie {
     this.version(2).stores({
       rhythmSymbols: 'id, name, createdAt',
     });
+    // v3: song difficulty variants. No index changes; wrap each song's flat
+    // `sections` into a single default difficulty (level 3 = "standard"). The
+    // beat-timing layer rides along inside those sections untouched.
+    this.version(3)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx
+          .table('songs')
+          .toCollection()
+          .modify((song: Record<string, unknown>) => {
+            if (Array.isArray(song.difficulties)) return;
+            const id = newId();
+            song.difficulties = [
+              { id, level: 3, sections: (song.sections as unknown[]) ?? [] },
+            ];
+            song.defaultDifficultyId = id;
+            delete song.sections;
+          });
+      });
   }
 }
 

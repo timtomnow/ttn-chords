@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, MoveHorizontal, Minus, Pencil, Play, Plus } from 'lucide-react';
-import { useRhythmPatternsByIds, useRhythmSymbolMap, useSong } from '@/db/repo';
+import { useAdminMode, useRhythmPatternsByIds, useRhythmSymbolMap, useSong } from '@/db/repo';
 import { ChordLine } from '@/components/chords/ChordLine';
 import { ChordChart } from '@/components/chords/ChordChart';
 import { ChordPopover } from '@/components/chords/ChordPopover';
@@ -9,7 +9,7 @@ import { useChartResolver } from '@/components/chords/useChartResolver';
 import { RhythmChart } from '@/components/rhythm/RhythmChart';
 import { defaultLabelForKind } from '@/lib/chordpro';
 import { preferFlatsForKey, transposeChordSymbol } from '@/lib/music';
-import { uniqueChords } from '@/lib/song';
+import { sectionsOf, sortedDifficulties, uniqueChords } from '@/lib/song';
 import type { Song } from '@/types';
 
 export function SongView() {
@@ -33,7 +33,11 @@ export function SongView() {
 
 function View({ song }: { song: Song }) {
   const navigate = useNavigate();
+  const admin = useAdminMode();
   const [transpose, setTranspose] = useState(0);
+  const difficulties = sortedDifficulties(song);
+  const [diffId, setDiffId] = useState(song.defaultDifficultyId);
+  const sections = useMemo(() => sectionsOf(song, diffId), [song, diffId]);
   const [popover, setPopover] = useState<{ chord: string; anchor: { x: number; y: number } } | null>(
     null,
   );
@@ -41,14 +45,13 @@ function View({ song }: { song: Song }) {
 
   const flats = preferFlatsForKey(song.key);
   const chords = useMemo(
-    () => uniqueChords(song.sections, transpose, flats),
-    [song.sections, transpose, flats],
+    () => uniqueChords(sections, transpose, flats),
+    [sections, transpose, flats],
   );
 
   const patternIds = useMemo(
-    () =>
-      song.sections.map((s) => s.rhythmPatternId).filter((id): id is string => Boolean(id)),
-    [song.sections],
+    () => sections.map((s) => s.rhythmPatternId).filter((id): id is string => Boolean(id)),
+    [sections],
   );
   const patterns = useRhythmPatternsByIds(patternIds);
   const symbolMap = useRhythmSymbolMap();
@@ -64,12 +67,20 @@ function View({ song }: { song: Song }) {
           <ArrowLeft size={16} /> Songs
         </button>
         <div className="flex gap-2">
-          <button className="btn-secondary" onClick={() => navigate('edit')}>
-            <Pencil size={15} /> Edit
-          </button>
-          <button className="btn-secondary" onClick={() => navigate('tag')} title="Tag beats by playing along">
-            <MoveHorizontal size={15} /> Tag beats
-          </button>
+          {admin && (
+            <>
+              <button className="btn-secondary" onClick={() => navigate('edit')}>
+                <Pencil size={15} /> Edit
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => navigate(diffId ? `tag?d=${encodeURIComponent(diffId)}` : 'tag')}
+                title="Tag beats by playing along"
+              >
+                <MoveHorizontal size={15} /> Tag beats
+              </button>
+            </>
+          )}
           <button className="btn-primary" onClick={() => navigate('perform')}>
             <Play size={15} /> Perform
           </button>
@@ -90,6 +101,23 @@ function View({ song }: { song: Song }) {
             .join(' · ') || '—'}
         </p>
       </header>
+
+      {difficulties.length > 1 && (
+        <div className="mb-3 flex items-center gap-2">
+          <span className="label">Difficulty</span>
+          <select
+            className="input h-8 w-auto py-0 text-sm"
+            value={diffId ?? difficulties[0].id}
+            onChange={(e) => setDiffId(e.target.value)}
+          >
+            {difficulties.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.label ? `${d.label} (L${d.level})` : `Level ${d.level}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Transpose control */}
       <div className="mb-5 flex items-center gap-2">
@@ -138,7 +166,7 @@ function View({ song }: { song: Song }) {
 
       {/* Body */}
       <div className="space-y-6">
-        {song.sections.map((section) => {
+        {sections.map((section) => {
           const pattern = section.rhythmPatternId
             ? patterns?.get(section.rhythmPatternId)
             : undefined;

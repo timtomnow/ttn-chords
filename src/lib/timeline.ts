@@ -12,6 +12,7 @@
 // Pure + unit-tested (timeline.test.ts). No React, no DB.
 
 import type { Beats, ChordEvent, Line, Section, Song, TimeSignature } from '@/types';
+import { sectionsOf } from '@/lib/song';
 
 export const DEFAULT_TS: TimeSignature = { beats: 4, unit: 4 };
 export const DEFAULT_TEMPO = 100;
@@ -30,10 +31,12 @@ export function quarterBeatsPerBar(ts: TimeSignature): number {
   return (ts.beats * 4) / ts.unit;
 }
 
-/** Does any chord event anywhere in the song carry a beat? Drives the "needs
+/** Does any chord event in the given difficulty carry a beat? Drives the "needs
  * tagging" empty state in the horizontal view. */
-export function hasAnyBeats(song: Song): boolean {
-  return song.sections.some((s) => s.lines.some((l) => l.events.some((e) => e.beat)));
+export function hasAnyBeats(song: Song, difficultyId?: string): boolean {
+  return sectionsOf(song, difficultyId).some((s) =>
+    s.lines.some((l) => l.events.some((e) => e.beat)),
+  );
 }
 
 export type TimelineDefaults = {
@@ -119,7 +122,11 @@ function passLength(section: Section, barBeats: number): number {
  * Build the absolute timeline. Sections lay end-to-end; `section.repeat`
  * (default 1) duplicates a section's items and length.
  */
-export function buildTimeline(song: Song, defaults: TimelineDefaults): Timeline {
+export function buildTimeline(
+  song: Song,
+  defaults: TimelineDefaults,
+  difficultyId?: string,
+): Timeline {
   const items: TimelineItem[] = [];
   const bars: TimelineBar[] = [];
   const sections: SectionSpan[] = [];
@@ -127,7 +134,7 @@ export function buildTimeline(song: Song, defaults: TimelineDefaults): Timeline 
   let cursor = 0;
   let barNumber = 1;
 
-  song.sections.forEach((section, sectionIndex) => {
+  sectionsOf(song, difficultyId).forEach((section, sectionIndex) => {
     const ts = effectiveTs(section, song, defaults);
     const tempo = effectiveTempo(section, song, defaults);
     const barBeats = quarterBeatsPerBar(ts);

@@ -2,11 +2,12 @@ import { useNavigate } from 'react-router-dom';
 import { ListMusic, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { createSetlist, useSetlists } from '@/db/repo';
+import { createSetlist, useAdminMode, useSetlists } from '@/db/repo';
 
 export function SetlistList() {
   const setlists = useSetlists();
   const navigate = useNavigate();
+  const admin = useAdminMode();
 
   async function quickAdd() {
     const id = await createSetlist({ name: 'New setlist' });
@@ -19,9 +20,11 @@ export function SetlistList() {
         title="Setlists"
         subtitle="Ordered selections of songs for a class or session"
         actions={
-          <button className="btn-primary" onClick={quickAdd}>
-            <Plus size={16} /> New
-          </button>
+          admin ? (
+            <button className="btn-primary" onClick={quickAdd}>
+              <Plus size={16} /> New
+            </button>
+          ) : undefined
         }
       />
 
@@ -31,9 +34,11 @@ export function SetlistList() {
           title="No setlists yet"
           description="Group songs into an ordered list you can run through in performance mode."
           action={
-            <button className="btn-primary" onClick={quickAdd}>
-              <Plus size={16} /> New setlist
-            </button>
+            admin ? (
+              <button className="btn-primary" onClick={quickAdd}>
+                <Plus size={16} /> New setlist
+              </button>
+            ) : undefined
           }
         />
       ) : (

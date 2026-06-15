@@ -12,12 +12,14 @@ import {
   Pause,
   Play,
   Plus,
+  Sliders,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import { ChordPopover } from '@/components/chords/ChordPopover';
 import { PerformMetronome } from '@/components/tools/PerformMetronome';
+import { MetronomeSettingsFields } from '@/components/tools/MetronomeSettingsFields';
 import { useMetronome } from '@/components/tools/useMetronome';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { getView, listViews } from '@/lib/performance/registry';
@@ -25,6 +27,7 @@ import type { Transport } from '@/lib/performance/types';
 import { saveSettings, useSettings } from '@/db/repo';
 import { DEFAULT_METRONOME, clampTempo } from '@/lib/metronome';
 import { preferFlatsForKey } from '@/lib/music';
+import { getDifficulty, sortedDifficulties } from '@/lib/song';
 import '@/components/performance/views'; // register built-in views
 import type { Song } from '@/types';
 
@@ -36,6 +39,8 @@ export type SetlistNav = {
   onNext?: () => void;
   /** Per-entry transpose override coming from the setlist. */
   transpose?: number;
+  /** Per-entry difficulty variant chosen in the setlist. */
+  difficultyId?: string;
 };
 
 export function PerformShell({
@@ -56,12 +61,16 @@ export function PerformShell({
   const caps = view?.capabilities ?? {};
 
   const [transpose, setTranspose] = useState(setlist?.transpose ?? 0);
+  const [activeDifficultyId, setActiveDifficultyId] = useState<string | undefined>(
+    setlist?.difficultyId ?? song.defaultDifficultyId,
+  );
   const [fontScale, setFontScale] = useState(1.25);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [popover, setPopover] = useState<{ chord: string; anchor: { x: number; y: number } } | null>(
     null,
   );
+  const [showMetroSettings, setShowMetroSettings] = useState(false);
 
   const { held } = useWakeLock(true);
 
@@ -93,13 +102,18 @@ export function PerformShell({
   // Reset per-song state when navigating a setlist.
   useEffect(() => {
     setTranspose(setlist?.transpose ?? 0);
+    setActiveDifficultyId(setlist?.difficultyId ?? song.defaultDifficultyId);
     setPlaying(false);
     setTempo(clampTempo(song.tempo ?? prefs.tempo));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [song.id, setlist?.transpose]);
+  }, [song.id, setlist?.transpose, setlist?.difficultyId]);
 
   const flats = preferFlatsForKey(song.key);
   const ViewComponent = view?.component;
+
+  const difficulties = sortedDifficulties(song);
+  const activeDiff = getDifficulty(song, activeDifficultyId);
+  const sections = activeDiff?.sections ?? [];
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-50">
@@ -122,6 +136,22 @@ export function PerformShell({
           )}
         </div>
 
+        {/* Difficulty switcher (only when the song has more than one variant) */}
+        {difficulties.length > 1 && (
+          <select
+            className="input h-8 w-auto py-0 text-sm"
+            value={activeDiff?.id ?? ''}
+            onChange={(e) => setActiveDifficultyId(e.target.value)}
+            title="Difficulty"
+          >
+            {difficulties.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.label ? `${d.label} (L${d.level})` : `Level ${d.level}`}
+              </option>
+            ))}
+          </select>
+        )}
+
         {/* View switcher */}
         <select
           className="input h-8 w-auto py-0 text-sm"
@@ -142,6 +172,8 @@ export function PerformShell({
         {ViewComponent ? (
           <ViewComponent
             song={song}
+            sections={sections}
+            difficultyId={activeDiff?.id}
             transpose={transpose}
             preferFlats={flats}
             fontScale={fontScale}
@@ -231,6 +263,15 @@ export function PerformShell({
           }}
         />
 
+        <button
+          className="btn-ghost p-2"
+          onClick={() => setShowMetroSettings(true)}
+          aria-label="Metronome settings"
+          title="Metronome settings"
+        >
+          <Sliders size={18} />
+        </button>
+
         {setlist && (
           <button
             className="btn-ghost p-2 disabled:opacity-30"
@@ -253,6 +294,34 @@ export function PerformShell({
 
       {popover && (
         <ChordPopover chord={popover.chord} anchor={popover.anchor} onClose={() => setPopover(null)} />
+      )}
+
+      {showMetroSettings && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+          onClick={() => setShowMetroSettings(false)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-ink-50 p-4 dark:bg-ink-900 sm:rounded-2xl"
+            style={{ paddingBottom: 'calc(var(--safe-bottom) + 1rem)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Metronome settings</h2>
+              <button
+                className="btn-ghost p-2"
+                onClick={() => setShowMetroSettings(false)}
+                aria-label="Close metronome settings"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <MetronomeSettingsFields
+              value={prefs}
+              onChange={(patch) => void saveSettings({ metronome: { ...prefs, ...patch } })}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

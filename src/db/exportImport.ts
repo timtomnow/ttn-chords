@@ -5,6 +5,7 @@
 // the DB untouched.
 
 import { db, SCHEMA_VERSION } from './schema';
+import { newId } from '@/lib/id';
 import type {
   AppSettings,
   ChordDefinition,
@@ -162,7 +163,7 @@ export function parseExportPayload(value: unknown): ExportPayload {
     version: v.version,
     exportedAt: typeof v.exportedAt === 'number' ? v.exportedAt : Date.now(),
     photos,
-    songs: rows('songs') as Song[],
+    songs: rows('songs').map(normalizeSong),
     setlists: rows('setlists') as Setlist[],
     rhythmPatterns: rows('rhythmPatterns') as RhythmPattern[],
     rhythmSymbols: rows('rhythmSymbols') as RhythmSymbol[],
@@ -170,6 +171,27 @@ export function parseExportPayload(value: unknown): ExportPayload {
     chordDefinitions: rows('chordDefinitions') as ChordDefinition[],
     reportTemplates: rows('reportTemplates') as ReportTemplate[],
     settings: rows('settings') as AppSettings[],
+  };
+}
+
+/**
+ * Bring a song row up to the v3 shape: a pre-v3 backup carries a flat
+ * `sections` array, which we wrap into one default difficulty (level 3). Already-
+ * migrated rows pass through untouched.
+ */
+function normalizeSong(row: unknown): Song {
+  const s = (row ?? {}) as Record<string, unknown> & Partial<Song>;
+  if (Array.isArray(s.difficulties) && s.difficulties.length) return s as Song;
+  const id = newId();
+  const sections = Array.isArray((s as { sections?: unknown }).sections)
+    ? ((s as { sections: Song['difficulties'][number]['sections'] }).sections)
+    : [];
+  const { sections: _drop, ...rest } = s as Record<string, unknown>;
+  void _drop;
+  return {
+    ...(rest as unknown as Song),
+    difficulties: [{ id, level: 3, sections }],
+    defaultDifficultyId: id,
   };
 }
 

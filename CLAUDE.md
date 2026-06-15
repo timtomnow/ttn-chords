@@ -43,7 +43,7 @@ src/
     layout/        AppShell, Sidebar, BottomNav, Logo, nav (shared nav list)
     ui/            PageHeader, EmptyState (more per phase)
     chords/        chord-chart renderers (Phase 4)
-    inputs/        shared inputs (per phase)
+    inputs/        shared inputs (TagInput, TempoInput — click-to-type BPM)
   db/
     schema.ts      Dexie database (versioned, all tables)
     repo.ts        typed CRUD + useLiveQuery hooks — components import from here
@@ -54,6 +54,8 @@ src/
     tags.ts        tag normalize/add/remove
     ttnBackup.ts   window.TTNBackupAdapter install + restore opener
     chords/        bundled chord library + instrument defaults (Phase 1)
+    library/       static starter-library bundles + opt-in import planner (Phase 13)
+    song.ts        difficulty-variant resolvers (sectionsOf/getDifficulty) + uniqueChords
     music.ts       transpose / chord parsing (Phase 1)
     timeline.ts    flatten per-section beats → one absolute beat timeline (Phase 12)
     chordpro.ts    ChordPro parse/serialize (Phase 2)
@@ -63,12 +65,18 @@ src/
 
 ## Data model (summary)
 Full detail in `src/types.ts` and plan.md §3.
-- **Song** → `sections[]` → `lines[]` → `events[]`. A `ChordEvent` has a chord
-  symbol, an optional `charIndex` (ChordPro display anchor) and an optional
-  **`beat: {n,d}`** — an exact rational number of quarter-note beats from the
-  section start. That timing layer is forward-compatible with full notation
-  (add `duration` later; additive only) — **do not break that invariant.**
-- **Setlist** → `entries[]` with per-performance `transpose`/`capo`/`notes`.
+- **Song** → `difficulties[]` (each `SongDifficulty`: level 1–5 + its own
+  `sections[]`) → `lines[]` → `events[]`. A `ChordEvent` has a chord symbol, an
+  optional `charIndex` (ChordPro display anchor) and an optional **`beat: {n,d}`**
+  — an exact rational number of quarter-note beats from the section start. That
+  timing layer is forward-compatible with full notation (add `duration` later;
+  additive only) — **do not break that invariant.** Resolve the active variant
+  via `lib/song.ts` `sectionsOf()`/`getDifficulty()`; never read a removed flat
+  `Song.sections` (migrated away in Dexie v3).
+- **Setlist** → `entries[]` with per-performance `difficultyId?`/`transpose`/
+  `capo`/`notes`.
+- **Starter library** — static `SongBundle`s in `src/lib/library/`; opt-in sync
+  imports them as real `songs` rows (admin-independent). See plan.md §3 + Phase 13.
 - **RhythmPattern** — reusable strum grid, attachable to sections.
 - **Instrument** / **ChordDefinition** — these tables hold **user-defined**
   entries only; the common chords + default instruments ship as static data in

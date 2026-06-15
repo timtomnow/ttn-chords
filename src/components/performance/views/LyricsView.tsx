@@ -10,7 +10,7 @@ import { defaultLabelForKind } from '@/lib/chordpro';
 import { registerView } from '@/lib/performance/registry';
 import type { PerformanceViewProps } from '@/lib/performance/types';
 
-function LyricsView({ song, fontScale, playback, onReachEnd }: PerformanceViewProps) {
+function LyricsView({ song, sections, fontScale, playback, onReachEnd }: PerformanceViewProps) {
   const ref = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
   const accRef = useRef(0);
@@ -54,7 +54,7 @@ function LyricsView({ song, fontScale, playback, onReachEnd }: PerformanceViewPr
       style={{ fontSize: `${fontScale * 1.3}rem` }}
     >
       <div className="mx-auto max-w-2xl space-y-8 pb-[60vh]">
-        {song.sections.map((section) => (
+        {sections.map((section) => (
           <section key={section.id}>
             <h3 className="mb-2 text-[0.6em] font-semibold uppercase tracking-wide text-accent">
               {section.label || defaultLabelForKind(section.kind)}

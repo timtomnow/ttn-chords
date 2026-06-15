@@ -30,7 +30,7 @@ function song(sections: Section[], extra: Partial<Song> = {}): Song {
     id: id(),
     title: 'Test',
     tags: [],
-    sections,
+    difficulties: [{ id: 'd', level: 3, sections }],
     order: 0,
     createdAt: 0,
     updatedAt: 0,

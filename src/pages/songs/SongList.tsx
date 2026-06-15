@@ -4,12 +4,13 @@ import { Music, Plus, Search } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
-import { createSong, useSongs } from '@/db/repo';
+import { createSong, useAdminMode, useSongs } from '@/db/repo';
 import { parseChordPro } from '@/lib/chordpro';
 
 export function SongList() {
   const songs = useSongs();
   const navigate = useNavigate();
+  const admin = useAdminMode();
   const [query, setQuery] = useState('');
   const [importOpen, setImportOpen] = useState(false);
 
@@ -36,14 +37,16 @@ export function SongList() {
         title="Songs"
         subtitle="Your songbook"
         actions={
-          <>
-            <button className="btn-secondary" onClick={() => setImportOpen(true)}>
-              Import
-            </button>
-            <button className="btn-primary" onClick={quickAdd}>
-              <Plus size={16} /> New
-            </button>
-          </>
+          admin ? (
+            <>
+              <button className="btn-secondary" onClick={() => setImportOpen(true)}>
+                Import
+              </button>
+              <button className="btn-primary" onClick={quickAdd}>
+                <Plus size={16} /> New
+              </button>
+            </>
+          ) : undefined
         }
       />
 
@@ -66,11 +69,17 @@ export function SongList() {
         <EmptyState
           icon={Music}
           title="No songs yet"
-          description="Create a song or import ChordPro to get started."
+          description={
+            admin
+              ? 'Create a song or import ChordPro to get started.'
+              : 'Sync a starter library from Settings, or ask an admin to add songs.'
+          }
           action={
-            <button className="btn-primary" onClick={quickAdd}>
-              <Plus size={16} /> New song
-            </button>
+            admin ? (
+              <button className="btn-primary" onClick={quickAdd}>
+                <Plus size={16} /> New song
+              </button>
+            ) : undefined
           }
         />
       ) : (

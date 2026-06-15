@@ -14,6 +14,7 @@ import { openTtnBackupRestore } from '@/lib/ttnBackup';
 import { InstrumentSettings } from './settings/InstrumentSettings';
 import { RhythmSettings } from './settings/RhythmSettings';
 import { RhythmSymbolSettings } from './settings/RhythmSymbolSettings';
+import { BundleSettings } from './settings/BundleSettings';
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -24,6 +25,7 @@ const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
 export function Settings() {
   const { pref, setPref } = useTheme();
   const settings = useSettings();
+  const adminMode = settings?.adminMode ?? false;
 
   async function chooseAccent(hex: string) {
     applyAccent(hex);
@@ -91,14 +93,41 @@ export function Settings() {
         </div>
       </section>
 
+      {/* Authoring / role */}
+      <section className="space-y-3">
+        <h2 className="label">Authoring</h2>
+        <div className="card divide-y divide-ink-200 dark:divide-ink-800">
+          <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-3">
+            <span>
+              <span className="text-sm font-medium">Admin / authoring mode</span>
+              <span className="mt-0.5 block text-xs text-ink-500 dark:text-ink-400">
+                Reveals tools to create, edit, tag, and manage the library. Turn off for a
+                read &amp; perform experience.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={adminMode}
+              onChange={(e) => void saveSettings({ adminMode: e.target.checked })}
+              className="h-5 w-5 shrink-0 accent-accent"
+            />
+          </label>
+        </div>
+      </section>
+
+      {/* Starter library (available to everyone) */}
+      <BundleSettings />
+
       {/* Instrument & chords */}
       <InstrumentSettings />
 
-      {/* Rhythm symbols (admin) */}
-      <RhythmSymbolSettings />
-
-      {/* Rhythm patterns */}
-      <RhythmSettings />
+      {/* Authoring-only library managers */}
+      {adminMode && (
+        <>
+          <RhythmSymbolSettings />
+          <RhythmSettings />
+        </>
+      )}
 
       {/* Backup */}
       <section className="space-y-3">

@@ -22,7 +22,15 @@ function section(events: ChordEvent[], extra: Partial<Section> = {}): Section {
   return { id: id(), kind: 'verse', lines: [{ id: id(), lyric: 'la la la', events }], ...extra };
 }
 function song(sections: Section[]): Song {
-  return { id: id(), title: 'T', tags: [], sections, order: 0, createdAt: 0, updatedAt: 0 };
+  return {
+    id: id(),
+    title: 'T',
+    tags: [],
+    difficulties: [{ id: 'd', level: 3, sections }],
+    order: 0,
+    createdAt: 0,
+    updatedAt: 0,
+  };
 }
 
 /** Flat list of every event's beat-number in a section, in document order. */

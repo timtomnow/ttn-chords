@@ -76,6 +76,7 @@ export function SetlistRun() {
         total: setlist.entries.length,
         label: setlist.name,
         transpose: entry.transpose,
+        difficultyId: entry.difficultyId,
         onPrev: safeIndex > 0 ? () => setIndex(safeIndex - 1) : undefined,
         onNext:
           safeIndex < setlist.entries.length - 1 ? () => setIndex(safeIndex + 1) : undefined,

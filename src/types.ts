@@ -150,6 +150,21 @@ export type RhythmPattern = {
 // Song + Setlist
 // ─────────────────────────────────────────────────────────────────────────
 
+/**
+ * One difficulty variant of a song — its own arrangement (sections, chords and
+ * beat timing). The same song can ship a simple Level-1 version and a richer
+ * Level-3 version; the Perform view toggles between whichever exist. Each
+ * variant is tagged for beats independently. `level` is 1 (easiest)–5 (hardest).
+ */
+export type SongDifficulty = {
+  id: string;
+  level: number;
+  /** Optional display label, e.g. "Beginner", "Standard". */
+  label?: string;
+  /** Structured body for this variant — the canonical representation. */
+  sections: Section[];
+};
+
 export type Song = {
   id: string;
   title: string;
@@ -161,8 +176,15 @@ export type Song = {
   timeSignature?: TimeSignature;
   tags: string[];
 
-  /** Structured body — the canonical representation used by the app. */
-  sections: Section[];
+  /**
+   * Difficulty variants of the song — always at least one. The body lives here
+   * (each variant has its own `sections`); use `lib/song.ts` `sectionsOf()` /
+   * `getDifficulty()` to resolve the one to show. Migrated from the former
+   * flat `sections` field in Dexie v3.
+   */
+  difficulties: SongDifficulty[];
+  /** Id of the variant shown by default; falls back to the first/lowest level. */
+  defaultDifficultyId?: string;
 
   /**
    * Original imported/pasted text (ChordPro or a scraped page) kept for
@@ -182,6 +204,8 @@ export type Song = {
 /** A song's slot inside a setlist, with per-performance overrides. */
 export type SetlistEntry = {
   songId: string;
+  /** Which difficulty variant to perform; falls back to the song default. */
+  difficultyId?: string;
   /** Transpose this performance by N semitones (does not mutate the song). */
   transpose?: number;
   /** Capo override for this performance. */
@@ -416,6 +440,13 @@ export type AppSettings = {
   accentColor2?: string;
   /** Which instrument's charts to show by default. '' = bundled guitar. */
   myInstrumentId: string;
+  /**
+   * Admin / authoring mode. When false (default) the app is read + perform
+   * focused for "light" users and authoring affordances (create/edit/delete/tag,
+   * difficulty + library authoring) are hidden; true reveals them for "heavy"
+   * users. A stepping stone toward future teacher/student roles. Additive.
+   */
+  adminMode?: boolean;
   /** Last-used performance reading view id (see lib/performance/registry). */
   performanceViewId?: string;
   /** Bars visible at once in the Highway (side-scrolling) view. Additive. */

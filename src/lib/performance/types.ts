@@ -10,7 +10,7 @@
 
 import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import type { Song, TimeSignature } from '@/types';
+import type { Section, Song, TimeSignature } from '@/types';
 import type { ChordClick } from '@/components/chords/ChordLine';
 
 /**
@@ -44,6 +44,14 @@ export type PlaybackState = {
 /** Everything a view needs to render. The shell supplies all of it. */
 export type PerformanceViewProps = {
   song: Song;
+  /**
+   * Sections of the active difficulty variant (the shell resolves it). Views
+   * render the body from this rather than `song.difficulties` directly.
+   */
+  sections: Section[];
+  /** Id of the active difficulty variant — needed by views that write back
+   *  (e.g. the Highway's beat editing) so edits land on the right variant. */
+  difficultyId?: string;
   /** Semitone transpose applied to chords (and key display). */
   transpose: number;
   /** Enharmonic preference for chord spelling. */

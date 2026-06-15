@@ -3,10 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Check,
+  Copy,
   Eye,
   EyeOff,
   GripVertical,
   Plus,
+  Star,
   Trash2,
 } from 'lucide-react';
 import {
@@ -73,6 +75,15 @@ function fromEdit(sections: EditSection[]): Section[] {
   }));
 }
 
+// Editor-local difficulty: keeps every variant's body in state so autosave
+// writes them all back together (no flush-on-switch needed).
+type EditDifficulty = {
+  id: string;
+  level: number;
+  label?: string;
+  sections: EditSection[];
+};
+
 export function SongEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -103,14 +114,27 @@ function Editor({ song }: { song: Song }) {
     song.timeSignature ? `${song.timeSignature.beats}/${song.timeSignature.unit}` : '',
   );
   const [tags, setTags] = useState<string[]>(song.tags);
-  const [sections, setSections] = useState<EditSection[]>(() => toEdit(song.sections));
+  const [diffs, setDiffs] = useState<EditDifficulty[]>(() =>
+    (song.difficulties.length
+      ? song.difficulties
+      : [{ id: newId(), level: 3, sections: [] }]
+    ).map((d) => ({ id: d.id, level: d.level, label: d.label, sections: toEdit(d.sections) })),
+  );
+  const [activeDiffId, setActiveDiffId] = useState(
+    () => song.defaultDifficultyId ?? song.difficulties[0]?.id ?? '',
+  );
+  const [defaultDiffId, setDefaultDiffId] = useState(activeDiffId);
   const [preview, setPreview] = useState(true);
   const [saved, setSaved] = useState(true);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
+  // The variant currently being edited (fall back to the first if it vanished).
+  const activeDiff = diffs.find((d) => d.id === activeDiffId) ?? diffs[0];
+  const sections = activeDiff?.sections ?? [];
+
   // Debounced autosave. The first run after mount is skipped so loading a song
-  // doesn't immediately mark it dirty.
+  // doesn't immediately mark it dirty. Every variant's body is written together.
   const firstRun = useRef(true);
   useEffect(() => {
     if (firstRun.current) {
@@ -128,31 +152,75 @@ function Editor({ song }: { song: Song }) {
         tempo: tempo === '' ? undefined : Number(tempo),
         timeSignature: ts,
         tags,
-        sections: fromEdit(sections),
+        difficulties: diffs.map((d) => ({
+          id: d.id,
+          level: d.level,
+          label: d.label,
+          sections: fromEdit(d.sections),
+        })),
+        defaultDifficultyId: diffs.some((d) => d.id === defaultDiffId)
+          ? defaultDiffId
+          : diffs[0]?.id,
       }).then(() => setSaved(true));
     }, 600);
     return () => clearTimeout(handle);
-  }, [title, artist, key, capo, tempo, timeSig, tags, sections, song.id]);
+  }, [title, artist, key, capo, tempo, timeSig, tags, diffs, defaultDiffId, song.id]);
+
+  // ── Difficulty management ──
+  function patchActiveSections(updater: (prev: EditSection[]) => EditSection[]) {
+    setDiffs((prev) =>
+      prev.map((d) => (d.id === activeDiff?.id ? { ...d, sections: updater(d.sections) } : d)),
+    );
+  }
+  function patchActiveDiff(patch: Partial<EditDifficulty>) {
+    setDiffs((prev) => prev.map((d) => (d.id === activeDiff?.id ? { ...d, ...patch } : d)));
+  }
+  function nextFreeLevel(): number {
+    const used = new Set(diffs.map((d) => d.level));
+    for (let l = 1; l <= 5; l++) if (!used.has(l)) return l;
+    return 3;
+  }
+  function addDifficulty() {
+    const d: EditDifficulty = { id: newId(), level: nextFreeLevel(), sections: [] };
+    setDiffs((prev) => [...prev, d]);
+    setActiveDiffId(d.id);
+  }
+  function duplicateDifficulty() {
+    if (!activeDiff) return;
+    const copy: EditDifficulty = {
+      id: newId(),
+      level: Math.min(5, activeDiff.level + 1),
+      label: activeDiff.label,
+      sections: activeDiff.sections.map((s) => ({ ...s, id: newId() })),
+    };
+    setDiffs((prev) => [...prev, copy]);
+    setActiveDiffId(copy.id);
+  }
+  function deleteDifficulty() {
+    if (diffs.length <= 1 || !activeDiff) return;
+    if (!confirm('Delete this difficulty variant? This cannot be undone.')) return;
+    const remaining = diffs.filter((d) => d.id !== activeDiff.id);
+    setDiffs(remaining);
+    setActiveDiffId(remaining[0].id);
+    if (defaultDiffId === activeDiff.id) setDefaultDiffId(remaining[0].id);
+  }
 
   function addSection() {
-    setSections((prev) => [
-      ...prev,
-      { id: newId(), kind: 'verse', body: '' },
-    ]);
+    patchActiveSections((prev) => [...prev, { id: newId(), kind: 'verse', body: '' }]);
   }
 
   function updateSection(sid: string, patch: Partial<EditSection>) {
-    setSections((prev) => prev.map((s) => (s.id === sid ? { ...s, ...patch } : s)));
+    patchActiveSections((prev) => prev.map((s) => (s.id === sid ? { ...s, ...patch } : s)));
   }
 
   function removeSection(sid: string) {
-    setSections((prev) => prev.filter((s) => s.id !== sid));
+    patchActiveSections((prev) => prev.filter((s) => s.id !== sid));
   }
 
   function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
-    setSections((prev) => {
+    patchActiveSections((prev) => {
       const from = prev.findIndex((s) => s.id === active.id);
       const to = prev.findIndex((s) => s.id === over.id);
       return from === -1 || to === -1 ? prev : arrayMove(prev, from, to);
@@ -242,6 +310,75 @@ function Editor({ song }: { song: Song }) {
         <Field label="Tags" className="col-span-2 sm:col-span-2">
           <TagInput tags={tags} onChange={setTags} placeholder="Add a tag…" />
         </Field>
+      </section>
+
+      {/* Difficulty variants */}
+      <section className="card mb-6 space-y-3 p-4">
+        <div className="flex items-center justify-between">
+          <span className="label">Difficulty variants</span>
+          <button className="btn-ghost text-xs" onClick={addDifficulty}>
+            <Plus size={14} /> Add
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {[...diffs]
+            .sort((a, b) => a.level - b.level)
+            .map((d) => (
+              <button
+                key={d.id}
+                className={d.id === activeDiff?.id ? 'chip chip-active' : 'chip'}
+                onClick={() => setActiveDiffId(d.id)}
+                title={d.id === defaultDiffId ? 'Default variant' : undefined}
+              >
+                {d.id === defaultDiffId && <Star size={11} className="mr-1 inline fill-current" />}
+                {d.label ? `${d.label} (L${d.level})` : `Level ${d.level}`}
+              </button>
+            ))}
+        </div>
+        {activeDiff && (
+          <div className="flex flex-wrap items-end gap-3 border-t border-ink-200 pt-3 dark:border-ink-800">
+            <label className="block">
+              <span className="label mb-1">Level (1–5)</span>
+              <select
+                className="input h-8 w-auto py-0 text-sm"
+                value={activeDiff.level}
+                onChange={(e) => patchActiveDiff({ level: Number(e.target.value) })}
+              >
+                {[1, 2, 3, 4, 5].map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block flex-1">
+              <span className="label mb-1">Label (optional)</span>
+              <input
+                className="input h-8 py-0 text-sm"
+                placeholder="e.g. Beginner"
+                value={activeDiff.label ?? ''}
+                onChange={(e) => patchActiveDiff({ label: e.target.value || undefined })}
+              />
+            </label>
+            <button
+              className="btn-ghost text-xs"
+              onClick={() => setDefaultDiffId(activeDiff.id)}
+              disabled={defaultDiffId === activeDiff.id}
+            >
+              <Star size={14} /> Set default
+            </button>
+            <button className="btn-ghost text-xs" onClick={duplicateDifficulty} title="Copy this variant as a starting point">
+              <Copy size={14} /> Duplicate
+            </button>
+            <button
+              className="btn-ghost text-xs text-red-600 disabled:opacity-40"
+              onClick={deleteDifficulty}
+              disabled={diffs.length <= 1}
+            >
+              <Trash2 size={14} /> Delete
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Sections */}

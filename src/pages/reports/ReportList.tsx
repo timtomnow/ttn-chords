@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import {
   createReportTemplate,
+  useAdminMode,
   useReportTemplates,
   useSetlists,
   useSongs,
@@ -41,6 +42,7 @@ export function ReportList() {
   const songs = useSongs();
   const setlists = useSetlists();
   const navigate = useNavigate();
+  const admin = useAdminMode();
   const [seedOpen, setSeedOpen] = useState<null | 'song' | 'setlist'>(null);
 
   async function newBlank() {
@@ -73,17 +75,19 @@ export function ReportList() {
         title="Reports"
         subtitle="Printable songbooks & handouts"
         actions={
-          <div className="flex gap-2">
-            <button className="btn-secondary" onClick={() => setSeedOpen('song')}>
-              <Music size={15} /> From song
-            </button>
-            <button className="btn-secondary" onClick={() => setSeedOpen('setlist')}>
-              <ListMusic size={15} /> From setlist
-            </button>
-            <button className="btn-primary" onClick={newBlank}>
-              <Plus size={16} /> New
-            </button>
-          </div>
+          admin ? (
+            <div className="flex gap-2">
+              <button className="btn-secondary" onClick={() => setSeedOpen('song')}>
+                <Music size={15} /> From song
+              </button>
+              <button className="btn-secondary" onClick={() => setSeedOpen('setlist')}>
+                <ListMusic size={15} /> From setlist
+              </button>
+              <button className="btn-primary" onClick={newBlank}>
+                <Plus size={16} /> New
+              </button>
+            </div>
+          ) : undefined
         }
       />
 
@@ -93,9 +97,11 @@ export function ReportList() {
           title="No reports yet"
           description="Lay out songs, chord charts, logos, and rhythms across pages, then print to PDF."
           action={
-            <button className="btn-primary" onClick={newBlank}>
-              <Plus size={16} /> New report
-            </button>
+            admin ? (
+              <button className="btn-primary" onClick={newBlank}>
+                <Plus size={16} /> New report
+              </button>
+            ) : undefined
           }
         />
       ) : (

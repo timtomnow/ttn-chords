@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, Eraser, Minus, MoveHorizontal, Pause, Pencil, Play, Plus, Repeat, Trash2 } from 'lucide-react';
-import { saveSettings, updateSong, useSettings } from '@/db/repo';
+import { saveSettings, updateDifficultySections, useSettings } from '@/db/repo';
 import { defaultLabelForKind, parseBeat } from '@/lib/chordpro';
 import {
   DEFAULT_TEMPO,
@@ -95,6 +95,8 @@ const GRIDS = [
 
 function HorizontalView({
   song,
+  sections,
+  difficultyId,
   transpose,
   preferFlats,
   fontScale,
@@ -133,9 +135,12 @@ function HorizontalView({
     () => ({ tempo: defaultTempo, timeSignature: defaultTs }),
     [defaultTempo, defaultTs],
   );
-  const timeline = useMemo(() => buildTimeline(song, defaults), [song, defaults]);
+  const timeline = useMemo(
+    () => buildTimeline(song, defaults, difficultyId),
+    [song, defaults, difficultyId],
+  );
   const segments = useMemo(() => lyricSegments(timeline.items), [timeline.items]);
-  const timed = useMemo(() => hasAnyBeats(song), [song]);
+  const timed = useMemo(() => hasAnyBeats(song, difficultyId), [song, difficultyId]);
 
   const refBarBeats = quarterBeatsPerBar(song.timeSignature ?? defaults.timeSignature);
   const beatsVisible = Math.max(1, nBars * refBarBeats);
@@ -280,6 +285,10 @@ function HorizontalView({
   }
 
   // ── Edit-mode beat editing ──
+  // All edits read from the active difficulty's `sections` (prop) and write back
+  // to that same variant, never clobbering the others.
+  const writeSections = (next: Section[]) =>
+    void updateDifficultySections(song.id, difficultyId, next);
   const step = 4 / grid;
   function commitItem(item: TimelineItem, absBeat: number) {
     const span = timeline.sections[item.sectionIndex];
@@ -287,7 +296,7 @@ function HorizontalView({
     const passStart = span.startBeat + item.repetition * span.passBeats;
     const rel = clamp(absBeat - passStart, 0, span.passBeats);
     const snapped = Math.round(rel / step) * step;
-    void updateSong(song.id, { sections: setEventBeat(song.sections, item.id, snapBeats(snapped)) });
+    writeSections(setEventBeat(sections, item.id, snapBeats(snapped)));
   }
   function nudge(dir: -1 | 1) {
     const item = timeline.items.find((i) => i.id === selectedId);
@@ -295,7 +304,7 @@ function HorizontalView({
   }
   function clearSelected() {
     if (!selectedId) return;
-    void updateSong(song.id, { sections: clearEventBeat(song.sections, selectedId) });
+    writeSections(clearEventBeat(sections, selectedId));
     setSelectedId(null);
   }
   function onMarkerDown(e: React.PointerEvent, item: TimelineItem) {
@@ -320,12 +329,12 @@ function HorizontalView({
 
   // ── Edit-mode bar + chord editing (shared logic in lib/beatEdit) ──
   function doInsertBar(absBeat: number) {
-    void updateSong(song.id, { sections: insertBarAt(song.sections, timeline, absBeat) });
+    writeSections(insertBarAt(sections, timeline, absBeat));
     setSelectedId(null);
     setAdding(null);
   }
   function doDeleteBar(absBeat: number) {
-    void updateSong(song.id, { sections: deleteBarAt(song.sections, timeline, absBeat) });
+    writeSections(deleteBarAt(sections, timeline, absBeat));
     setSelectedId(null);
     setAdding(null);
   }
@@ -387,15 +396,15 @@ function HorizontalView({
 
   function commitAdd(chord: string) {
     if (!adding) return;
-    void updateSong(song.id, {
-      sections: addChordEvent(song.sections, {
+    writeSections(
+      addChordEvent(sections, {
         sectionIndex: adding.sectionIndex,
         chord,
         beat: adding.beat,
         lineId: adding.lineId,
         charIndex: adding.charIndex,
       }),
-    });
+    );
     setAdding(null);
   }
 
@@ -409,7 +418,14 @@ function HorizontalView({
             The scrolling view needs beats. Tag them by playing along once.
           </p>
         </div>
-        <button className="btn-primary" onClick={() => navigate(`/songs/${song.id}/tag`)}>
+        <button
+          className="btn-primary"
+          onClick={() =>
+            navigate(
+              `/songs/${song.id}/tag${difficultyId ? `?d=${encodeURIComponent(difficultyId)}` : ''}`,
+            )
+          }
+        >
           Tag beats
         </button>
       </div>

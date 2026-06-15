@@ -14,6 +14,7 @@ import type { PerformanceViewProps } from '@/lib/performance/types';
 
 function ScrollView({
   song,
+  sections,
   transpose,
   preferFlats,
   fontScale,
@@ -27,8 +28,8 @@ function ScrollView({
   const lastTsRef = useRef<number | null>(null);
 
   const patternIds = useMemo(
-    () => song.sections.map((s) => s.rhythmPatternId).filter((id): id is string => Boolean(id)),
-    [song.sections],
+    () => sections.map((s) => s.rhythmPatternId).filter((id): id is string => Boolean(id)),
+    [sections],
   );
   const patterns = useRhythmPatternsByIds(patternIds);
   const symbolMap = useRhythmSymbolMap();
@@ -82,7 +83,7 @@ function ScrollView({
       style={{ fontSize: `${fontScale}rem` }}
     >
       <div className="mx-auto max-w-3xl space-y-8 pb-[60vh]">
-        {song.sections.map((section) => {
+        {sections.map((section) => {
           const pattern = section.rhythmPatternId
             ? patterns?.get(section.rhythmPatternId)
             : undefined;

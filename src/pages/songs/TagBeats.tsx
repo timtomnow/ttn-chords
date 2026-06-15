@@ -10,9 +10,11 @@
 // song without hand-typing @beat in ChordPro; it powers the Highway view.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Eraser, Minus, Plus, RotateCcw, Trash2, Wand2 } from 'lucide-react';
-import { updateSong, useSettings, useSong } from '@/db/repo';
+import { updateDifficultySections, useSettings, useSong } from '@/db/repo';
+import { sectionsOf } from '@/lib/song';
+import { TempoInput } from '@/components/inputs/TempoInput';
 import { useMetronome } from '@/components/tools/useMetronome';
 import { parseBeat } from '@/lib/chordpro';
 import { clampTempo } from '@/lib/metronome';
@@ -101,7 +103,12 @@ export function TagBeats() {
 function Tagger({ song }: { song: Song }) {
   const navigate = useNavigate();
   const settings = useSettings();
+  const [searchParams] = useSearchParams();
   const flats = preferFlatsForKey(song.key);
+
+  // Which difficulty variant we're tagging (from the ?d= query param).
+  const difficultyId = searchParams.get('d') ?? song.defaultDifficultyId;
+  const baseSections = useMemo(() => sectionsOf(song, difficultyId), [song, difficultyId]);
 
   const defaults = {
     tempo: settings?.defaultTempo ?? DEFAULT_TEMPO,
@@ -113,7 +120,7 @@ function Tagger({ song }: { song: Song }) {
   // Ordered list of chord events to tag, with lyric context for display.
   const items = useMemo<TagItem[]>(() => {
     const out: TagItem[] = [];
-    song.sections.forEach((section, sectionIndex) => {
+    baseSections.forEach((section, sectionIndex) => {
       for (const line of section.lines) {
         const anchors = line.events
           .filter((e) => e.charIndex !== undefined)
@@ -130,13 +137,13 @@ function Tagger({ song }: { song: Song }) {
       }
     });
     return out;
-  }, [song.sections]);
+  }, [baseSections]);
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [tempo, setTempo] = useState(() => clampTempo(song.tempo ?? defaults.tempo));
   const [index, setIndex] = useState(0);
   const [posBeat, setPosBeat] = useState(0);
-  const [working, setWorking] = useState<Section[]>(song.sections);
+  const [working, setWorking] = useState<Section[]>(baseSections);
   const [grid, setGrid] = useState(DEFAULT_GRID);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const recorded = useRef<(number | undefined)[]>([]);
@@ -154,7 +161,7 @@ function Tagger({ song }: { song: Song }) {
   const finishRecording = useCallback(() => {
     metro.stop();
     // Convert absolute onsets → section-relative beats, grouped by section.
-    const next = song.sections.map((s) => ({ ...s, lines: s.lines.map((l) => ({ ...l, events: l.events.map((e) => ({ ...e })) })) }));
+    const next = baseSections.map((s) => ({ ...s, lines: s.lines.map((l) => ({ ...l, events: l.events.map((e) => ({ ...e })) })) }));
     const eventsById = new Map(next.flatMap((s) => s.lines.flatMap((l) => l.events.map((e) => [e.id, e] as const))));
 
     for (let si = 0; si < next.length; si++) {
@@ -173,7 +180,7 @@ function Tagger({ song }: { song: Song }) {
     }
     setWorking(next);
     setPhase('review');
-  }, [items, metro, song.sections, ts, grid]);
+  }, [items, metro, baseSections, ts, grid]);
 
   const tap = useCallback(() => {
     if (phase !== 'recording') return;
@@ -227,7 +234,7 @@ function Tagger({ song }: { song: Song }) {
   }
 
   async function save() {
-    await updateSong(song.id, { sections: working });
+    await updateDifficultySections(song.id, difficultyId, working);
     navigate(`/songs/${song.id}/perform`);
   }
 
@@ -265,13 +272,13 @@ function Tagger({ song }: { song: Song }) {
           </p>
           <div className="flex items-center justify-center gap-2">
             <span className="label">Tempo</span>
-            <button className="btn-secondary px-2 py-1" onClick={() => setTempo((t) => clampTempo(t - 1))}>
-              <Minus size={14} />
-            </button>
-            <span className="w-14 text-center text-lg font-semibold tabular-nums">{tempo}</span>
-            <button className="btn-secondary px-2 py-1" onClick={() => setTempo((t) => clampTempo(t + 1))}>
-              <Plus size={14} />
-            </button>
+            <TempoInput
+              value={tempo}
+              onChange={(bpm) => setTempo(clampTempo(bpm))}
+              buttonClassName="btn-secondary px-2 py-1"
+              numberClassName="w-14 text-center text-lg font-semibold tabular-nums"
+              ariaLabel="Tag-beats tempo"
+            />
             <span className="text-sm text-ink-500">BPM</span>
           </div>
           <div className="flex items-center justify-center gap-2">
@@ -442,8 +449,14 @@ function ReviewEditor({
   onSave: () => void;
 }) {
   const laneRef = useRef<HTMLDivElement>(null);
+  // buildTimeline resolves sections from the song's difficulties; feed it a
+  // synthetic single-variant song carrying the in-progress `working` sections.
   const timeline = useMemo(
-    () => buildTimeline({ ...song, sections: working }, defaults),
+    () =>
+      buildTimeline(
+        { ...song, difficulties: [{ id: 'tmp', level: 1, sections: working }], defaultDifficultyId: 'tmp' },
+        defaults,
+      ),
     [song, working, defaults],
   );
   const step = 4 / grid; // quarter-beats per grid division
