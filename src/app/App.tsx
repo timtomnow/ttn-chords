@@ -7,6 +7,7 @@ import { Reports } from '@/pages/Reports';
 import { ReportPrint } from '@/pages/reports/ReportPrint';
 import { Tools } from '@/pages/Tools';
 import { Settings } from '@/pages/Settings';
+import { GuidePage, HelpAll, HelpIndex, HelpSectionPage } from '@/pages/Help';
 import { ThemeProvider } from './theme';
 import { PwaUpdater } from '@/components/PwaUpdater';
 import { installTtnBackupAdapter } from '@/lib/ttnBackup';
@@ -36,6 +37,11 @@ export function App() {
           <Route path="/reports/*" element={<Reports />} />
           <Route path="/tools/*" element={<Tools />} />
           <Route path="/settings" element={<Settings />} />
+          {/* Help — static paths before the catch-all :slug so they rank first. */}
+          <Route path="/help" element={<HelpIndex />} />
+          <Route path="/help/all" element={<HelpAll />} />
+          <Route path="/help/section/:section" element={<HelpSectionPage />} />
+          <Route path="/help/:slug" element={<GuidePage />} />
           <Route path="*" element={<Navigate to="/songs" replace />} />
         </Route>
       </Routes>

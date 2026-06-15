@@ -59,7 +59,9 @@ src/
     music.ts       transpose / chord parsing (Phase 1)
     timeline.ts    flatten per-section beats → one absolute beat timeline (Phase 12)
     chordpro.ts    ChordPro parse/serialize (Phase 2)
-  pages/           Songs, Setlists, Reports, Settings (sub-routes per phase)
+    help.ts        in-app Help loader (inlines content/help/*.md, ToC, slugs)
+  content/help/    user-facing how-to guides (Markdown + frontmatter; ttn-docs)
+  pages/           Songs, Setlists, Reports, Settings, Help (sub-routes per phase)
   types.ts         All entity types — one source of truth
 ```
 

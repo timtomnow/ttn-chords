@@ -1,6 +1,15 @@
 import { NavLink } from 'react-router-dom';
+import { HelpCircle } from 'lucide-react';
 import { Logo } from './Logo';
 import { NAV } from './nav';
+
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  [
+    'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition',
+    isActive
+      ? 'bg-accent text-accent-fg'
+      : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800',
+  ].join(' ');
 
 export function Sidebar() {
   return (
@@ -12,22 +21,18 @@ export function Sidebar() {
         <ul className="space-y-1">
           {NAV.map(({ to, label, icon: Icon }) => (
             <li key={to}>
-              <NavLink
-                to={to}
-                className={({ isActive }) =>
-                  [
-                    'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition',
-                    isActive
-                      ? 'bg-accent text-accent-fg'
-                      : 'text-ink-700 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-ink-800',
-                  ].join(' ')
-                }
-              >
+              <NavLink to={to} className={linkClass}>
                 <Icon size={18} />
                 {label}
               </NavLink>
             </li>
           ))}
+          <li>
+            <NavLink to="/help" className={linkClass}>
+              <HelpCircle size={18} />
+              Help
+            </NavLink>
+          </li>
         </ul>
       </nav>
       <div className="px-6 py-4 text-xs text-ink-400 dark:text-ink-500">

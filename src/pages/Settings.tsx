@@ -1,4 +1,5 @@
-import { Check, Download, Upload, RotateCcw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BookOpen, Check, ChevronRight, Download, Upload, RotateCcw } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { useTheme, type ThemePref } from '@/app/theme';
 import { saveSettings, useSettings } from '@/db/repo';
@@ -113,6 +114,26 @@ export function Settings() {
             />
           </label>
         </div>
+      </section>
+
+      {/* Help & guides */}
+      <section className="space-y-3">
+        <h2 className="label">Help</h2>
+        <Link
+          to="/help"
+          className="card flex items-center justify-between gap-3 px-4 py-3 transition hover:border-accent"
+        >
+          <span className="flex items-center gap-3">
+            <BookOpen size={18} className="text-ink-400" />
+            <span>
+              <span className="block text-sm font-medium">Help &amp; Guides</span>
+              <span className="block text-xs text-ink-500 dark:text-ink-400">
+                How to perform, build setlists, tag beats, and more.
+              </span>
+            </span>
+          </span>
+          <ChevronRight size={16} className="text-ink-400" />
+        </Link>
       </section>
 
       {/* Starter library (available to everyone) */}

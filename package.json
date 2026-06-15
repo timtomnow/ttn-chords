@@ -22,11 +22,14 @@
     "lucide-react": "^0.456.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^9.1.0",
     "react-rnd": "^10.5.3",
-    "react-router-dom": "^6.27.0"
+    "react-router-dom": "^6.27.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@tailwindcss/typography": "^0.5.20",
     "@types/node": "^22.19.17",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
