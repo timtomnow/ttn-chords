@@ -86,6 +86,12 @@ function clearEventBeat(sections: Section[], id: string): Section[] {
 const PLAYHEAD_FRAC = 0.18;
 const LYRIC_ROWS = 3;
 const RULER_H = 28;
+/** Bar-number label sizes (font px + the height of the top highlight band). */
+const BAR_SIZES = {
+  sm: { font: 10, band: 16 },
+  md: { font: 15, band: 22 },
+  lg: { font: 22, band: 30 },
+} as const;
 const COUNT_INS = [0, 4, 8];
 const GRIDS = [
   { label: '1/4', den: 4 },
@@ -118,6 +124,7 @@ function HorizontalView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [countNum, setCountNum] = useState(0);
+  const [currentBeatIdx, setCurrentBeatIdx] = useState(0);
   const [drag, setDrag] = useState<{ id: string; absBeat: number } | null>(null);
   // Open inline "type a chord" input. `beat` is the section-relative onset; an
   // absent lineId/charIndex means a beat-only chord (no lyric anchor).
@@ -237,6 +244,8 @@ function HorizontalView({
 
       currentBeatRef.current = beat;
       setCountNum((p) => (p === counting ? p : counting));
+      const bi = Math.floor(beat + 1e-6);
+      setCurrentBeatIdx((p) => (p === bi ? p : bi));
 
       let id: string | null = null;
       for (const item of timeline.items) {
@@ -435,6 +444,15 @@ function HorizontalView({
   const playing = transport.playing && !editMode;
   const laneWidth = pxPerBeat > 0 ? timeline.totalBeats * pxPerBeat + width : 0;
 
+  // Bar-number sizing + which bar/beat is current (for the tracking highlight).
+  // Plain computations (this is past the early `!timed` return, so no hooks here).
+  const barSize = BAR_SIZES[settings?.horizontalBarSize ?? 'sm'];
+  let currentBarNumber = 0;
+  for (const bar of timeline.bars) {
+    if (currentBeatIdx + 1e-6 >= bar.absBeat) currentBarNumber = bar.number;
+    else break;
+  }
+
   return (
     <div className="flex h-full flex-col bg-ink-50 dark:bg-ink-950">
       {/* Toolbar */}
@@ -570,12 +588,33 @@ function HorizontalView({
               else setStartFromClientX(e.clientX);
             }}
           >
+            {/* Current-beat tracking highlight (accent), at the bar-number band */}
+            {pxPerBeat > 0 && (
+              <div
+                className="pointer-events-none absolute z-[1] rounded-b bg-accent/25"
+                style={{
+                  left: currentBeatIdx * pxPerBeat,
+                  width: pxPerBeat,
+                  top: RULER_H,
+                  height: barSize.band,
+                }}
+              />
+            )}
+
             {/* Bar grid */}
             {pxPerBeat > 0 &&
               timeline.bars.map((bar) => (
-                <div key={bar.number} className="absolute inset-y-0" style={{ left: bar.absBeat * pxPerBeat }}>
+                <div key={bar.number} className="absolute inset-y-0 z-[2]" style={{ left: bar.absBeat * pxPerBeat }}>
                   <div className="h-full w-px bg-ink-300 dark:bg-ink-700" />
-                  <span className="absolute left-1 text-[10px] tabular-nums text-ink-400" style={{ top: RULER_H + 2 }}>
+                  <span
+                    className={[
+                      'absolute left-1 rounded px-1 font-medium tabular-nums leading-none',
+                      bar.number === currentBarNumber
+                        ? 'bg-accent font-bold text-accent-fg'
+                        : 'text-ink-400',
+                    ].join(' ')}
+                    style={{ top: RULER_H + 2, fontSize: barSize.font }}
+                  >
                     {bar.number}
                   </span>
                   {Array.from({ length: Math.max(0, Math.round(bar.beats) - 1) }, (_, k) => (

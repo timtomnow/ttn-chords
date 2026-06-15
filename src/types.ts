@@ -453,6 +453,8 @@ export type AppSettings = {
   horizontalBars?: number;
   /** Count-in beats before playback in the Highway view (0, 4, or 8). Additive. */
   horizontalCountIn?: number;
+  /** Bar-number label size in the Highway view. Default 'sm'. Additive. */
+  horizontalBarSize?: 'sm' | 'md' | 'lg';
   defaultTimeSignature?: TimeSignature;
   defaultTempo?: number;
   /** Metronome tool preferences (Music Tools). Additive; non-indexed. */

@@ -320,6 +320,32 @@ export function PerformShell({
               value={prefs}
               onChange={(patch) => void saveSettings({ metronome: { ...prefs, ...patch } })}
             />
+
+            <section className="mt-6 space-y-3">
+              <h2 className="label">Highway</h2>
+              <div className="card p-4">
+                <span className="label mb-2 block">Bar number size</span>
+                <div className="flex flex-wrap gap-1">
+                  {(
+                    [
+                      ['sm', 'Small'],
+                      ['md', 'Medium'],
+                      ['lg', 'Large'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={
+                        (settings?.horizontalBarSize ?? 'sm') === value ? 'chip chip-active' : 'chip'
+                      }
+                      onClick={() => void saveSettings({ horizontalBarSize: value })}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       )}

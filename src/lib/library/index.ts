@@ -2,9 +2,11 @@
 // bundles/ and list it here; the Bundles settings screen renders them all.
 
 import { starterBundle } from './bundles/starter';
+import { countingCrowsBundle } from './bundles/counting-crows';
+import { johnDenverBundle } from './bundles/john-denver';
 import type { SongBundle } from './types';
 
-const BUNDLES: SongBundle[] = [starterBundle];
+const BUNDLES: SongBundle[] = [starterBundle, countingCrowsBundle, johnDenverBundle];
 
 export function listBundles(): SongBundle[] {
   return BUNDLES;
