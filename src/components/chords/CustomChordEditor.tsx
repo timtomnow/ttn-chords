@@ -17,17 +17,21 @@ export function CustomChordEditor({
   onClose,
   instrument,
   initial,
+  seed,
 }: {
   open: boolean;
   onClose: () => void;
   instrument: InstrumentInfo;
+  /** An existing user definition to edit. */
   initial?: ChordDefinition;
+  /** Starting values for a brand-new chart (e.g. overriding a standard shape). */
+  seed?: { name?: string; baseFret?: number; frets?: number[] };
 }) {
   const stringCount = instrument.strings ?? 6;
-  const [name, setName] = useState(initial?.name ?? '');
-  const [baseFret, setBaseFret] = useState(initial?.fretted?.baseFret ?? 1);
+  const [name, setName] = useState(initial?.name ?? seed?.name ?? '');
+  const [baseFret, setBaseFret] = useState(initial?.fretted?.baseFret ?? seed?.baseFret ?? 1);
   const [frets, setFrets] = useState<number[]>(
-    initial?.fretted?.frets ?? Array.from({ length: stringCount }, () => 0),
+    initial?.fretted?.frets ?? seed?.frets ?? Array.from({ length: stringCount }, () => 0),
   );
 
   const fretted = instrument.kind === 'fretted';

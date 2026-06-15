@@ -24,6 +24,13 @@ export * from './instruments';
 export { GUITAR_CHORDS } from './guitar';
 export { UKULELE_CHORDS } from './ukulele';
 export { computeBassRootShape, computePianoShape } from './compute';
+export {
+  standardChordNames,
+  COMMON_CHORD_NAMES,
+  arrangeChords,
+  KEY_LABELS,
+  type ChordSort,
+} from './catalog';
 
 export type ResolvedChart =
   | { kind: 'fretted'; instrumentId: string; name: string; source: ChartSource; fretted: FrettedShape }

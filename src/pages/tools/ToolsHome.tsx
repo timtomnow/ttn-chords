@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ChevronRight, Gauge, Mic } from 'lucide-react';
+import { ChevronRight, Gauge, Grid3x3, Mic } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 
 const TOOLS = [
@@ -14,6 +14,12 @@ const TOOLS = [
     icon: Mic,
     title: 'Tuner',
     desc: 'Chromatic tuning, or targeted to the strings of a chosen instrument.',
+  },
+  {
+    to: 'diagrams',
+    icon: Grid3x3,
+    title: 'Chord Diagrams',
+    desc: 'Browse the chord charts available for each instrument — standard and your custom ones.',
   },
 ];
 
