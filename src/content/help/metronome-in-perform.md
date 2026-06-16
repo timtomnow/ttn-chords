@@ -11,7 +11,10 @@ never have to leave the song to set up a click track.
 ## Steps
 
 1. Open a song and tap **Perform**.
-2. In the bottom bar, tap the metronome button to start or stop the click.
+2. In the bottom bar, tap the metronome button to start or stop the click. This
+   only plays the click — it does **not** scroll the song. (In the
+   [Highway view](/help/highway-view), use the header **Play** button to run the
+   song; pressing Play stops a running metronome, plays the count-in, then starts.)
 3. Set the tempo:
    - Tap the **−** / **+** buttons to nudge it, or
    - Tap the tempo number and type a new value (you can clear it completely; if

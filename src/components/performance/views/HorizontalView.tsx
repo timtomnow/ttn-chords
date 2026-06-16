@@ -19,6 +19,7 @@ import {
   beatsToNumber,
   buildTimeline,
   hasAnyBeats,
+  lyricSegments,
   quarterBeatsPerBar,
   type TimelineItem,
 } from '@/lib/timeline';
@@ -32,36 +33,11 @@ import {
   spanForBeat,
   splitLyricEvent,
 } from '@/lib/beatEdit';
+import { AddBeatInput, LyricEditor } from '@/components/inputs/InlineBeatInputs';
 import { transposeChordSymbol } from '@/lib/music';
 import { registerView } from '@/lib/performance/registry';
 import type { PerformanceViewProps } from '@/lib/performance/types';
 import type { Beats, Section } from '@/types';
-
-/** Lyric snippet shown under each timed chord: text from this chord's anchor up
- * to the next anchored chord on the same line. Anchorless events get nothing. */
-function lyricSegments(items: TimelineItem[]): Map<string, string> {
-  const map = new Map<string, string>();
-  const byLine = new Map<string, { at: number }[]>();
-  for (const item of items) {
-    const idx = item.event.charIndex;
-    if (idx === undefined) continue;
-    const key = `${item.section.id}:${item.line.id}`;
-    const arr = byLine.get(key) ?? [];
-    arr.push({ at: idx });
-    byLine.set(key, arr);
-  }
-  for (const item of items) {
-    const idx = item.event.charIndex;
-    if (idx === undefined) continue;
-    const lyric = item.line.lyric;
-    const anchors = (byLine.get(`${item.section.id}:${item.line.id}`) ?? [])
-      .filter((a) => a.at > idx)
-      .map((a) => a.at);
-    const end = anchors.length ? Math.min(...anchors) : lyric.length;
-    map.set(item.event.id, lyric.slice(idx, end).trim());
-  }
-  return map;
-}
 
 function snapBeats(x: number): Beats {
   return parseBeat(String(Math.max(0, x))) ?? { n: Math.round(Math.max(0, x)), d: 1 };
@@ -816,7 +792,7 @@ function HorizontalView({
             {/* Inline "type a chord / lyric" input opened by an add-mode click. */}
             {adding && (
               <div className="absolute z-30" style={{ left: adding.left, top: '34%' }}>
-                <AddChordInput
+                <AddBeatInput
                   kind={adding.kind}
                   onCommit={commitAdd}
                   onCancel={() => setAdding(null)}
@@ -871,100 +847,6 @@ function HorizontalView({
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
-}
-
-/** Tiny auto-focused field for typing a new chord symbol or lyric. Enter commits
- * a non-empty value; Escape or blur cancels. */
-function AddChordInput({
-  kind,
-  onCommit,
-  onCancel,
-}: {
-  kind: 'chord' | 'lyric';
-  onCommit: (value: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState('');
-  const lyric = kind === 'lyric';
-  return (
-    <input
-      autoFocus
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      onBlur={onCancel}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          const v = value.trim();
-          if (v) onCommit(v);
-          else onCancel();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          onCancel();
-        }
-      }}
-      placeholder={lyric ? 'lyric' : 'chord'}
-      className={[
-        'rounded-lg border-2 border-accent bg-white px-2 py-1 text-sm font-semibold shadow dark:bg-ink-900',
-        lyric ? 'w-40 text-ink-800 dark:text-ink-100' : 'w-20 text-accent',
-      ].join(' ')}
-    />
-  );
-}
-
-/** Inline editor over an existing lyric packet: edit the text (Enter saves) or
- * split it at the caret into two packets (the second gets its own beat). */
-function LyricEditor({
-  initial,
-  onCommit,
-  onSplit,
-  onCancel,
-}: {
-  initial: string;
-  onCommit: (text: string) => void;
-  onSplit: (caret: number, text: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initial);
-  const ref = useRef<HTMLInputElement>(null);
-  return (
-    <div
-      className="flex items-center gap-1 rounded-lg border-2 border-accent bg-white p-1 shadow dark:bg-ink-900"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <input
-        ref={ref}
-        autoFocus
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={onCancel}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            onCommit(value);
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            onCancel();
-          }
-        }}
-        placeholder="lyric"
-        className="w-40 rounded bg-transparent px-1 py-0.5 text-sm font-semibold text-ink-800 outline-none dark:text-ink-100"
-      />
-      <button
-        type="button"
-        // Keep input focus so onBlur doesn't cancel before this fires.
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => onSplit(ref.current?.selectionStart ?? value.length, value)}
-        className="rounded bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-600 hover:bg-accent hover:text-accent-fg dark:bg-ink-800 dark:text-ink-300"
-        title="Split at the cursor; the second half gets its own beat"
-      >
-        Split
-      </button>
-    </div>
-  );
 }
 
 registerView({

@@ -11,10 +11,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Eraser, Minus, Plus, RotateCcw, Trash2, Wand2 } from 'lucide-react';
+import { ArrowLeft, Eraser, Minus, Plus, RotateCcw, Trash2, Type, Wand2 } from 'lucide-react';
 import { updateDifficultySections, useSettings, useSong } from '@/db/repo';
 import { sectionsOf } from '@/lib/song';
 import { TempoInput } from '@/components/inputs/TempoInput';
+import { AddBeatInput, LyricEditor } from '@/components/inputs/InlineBeatInputs';
 import { useMetronome } from '@/components/tools/useMetronome';
 import { parseBeat } from '@/lib/chordpro';
 import { clampTempo } from '@/lib/metronome';
@@ -24,10 +25,19 @@ import {
   DEFAULT_TS,
   beatsToNumber,
   buildTimeline,
+  lyricSegments,
   quarterBeatsPerBar,
 } from '@/lib/timeline';
-import type { TimelineBar } from '@/lib/timeline';
-import { deleteBarAt, insertBarAt, isBlankBar } from '@/lib/beatEdit';
+import type { TimelineBar, TimelineItem } from '@/lib/timeline';
+import {
+  addLyricAnchor,
+  deleteBarAt,
+  insertBarAt,
+  isBlankBar,
+  setEventLyric,
+  spanForBeat,
+  splitLyricEvent,
+} from '@/lib/beatEdit';
 import type { Beats, Section, Song } from '@/types';
 
 type Phase = 'idle' | 'countin' | 'recording' | 'review';
@@ -460,6 +470,80 @@ function ReviewEditor({
     [song, working, defaults],
   );
   const step = 4 / grid; // quarter-beats per grid division
+  const segments = useMemo(() => lyricSegments(timeline.items), [timeline.items]);
+
+  // Add a lyric on its own beat; edit/split an existing lyric packet. Same
+  // canonical-model edits as the Highway view (lib/beatEdit), so changes flow
+  // back to the Scroll view and ChordPro export.
+  const [addLyric, setAddLyric] = useState(false);
+  const [adding, setAdding] = useState<{ left: number; sectionIndex: number; beat: Beats } | null>(
+    null,
+  );
+  const [editingLyric, setEditingLyric] = useState<{ id: string; left: number; text: string } | null>(
+    null,
+  );
+
+  function absBeatFromClientX(clientX: number): number | null {
+    const lane = laneRef.current;
+    if (!lane) return null;
+    const rect = lane.getBoundingClientRect();
+    return (clientX - rect.left + lane.scrollLeft) / PX_PER_BEAT;
+  }
+
+  /** Snap an absolute beat onto the grid, relative to one pass of its section. */
+  function snappedRel(sectionIndex: number, repetition: number, absBeat: number): Beats {
+    const span = timeline.sections[sectionIndex];
+    const passStart = span.startBeat + repetition * span.passBeats;
+    const rel = Math.max(0, Math.min(span.passBeats, absBeat - passStart));
+    return snap(Math.round(rel / step) * step);
+  }
+
+  function onLaneAddLyric(clientX: number) {
+    const absBeat = absBeatFromClientX(clientX);
+    if (absBeat === null) return;
+    const span = spanForBeat(timeline, absBeat);
+    if (!span) return;
+    const rep = Math.max(
+      0,
+      Math.min(
+        Math.floor((absBeat - span.startBeat) / span.passBeats),
+        Math.max(0, Math.round(span.lengthBeats / span.passBeats) - 1),
+      ),
+    );
+    setSelectedId(null);
+    setEditingLyric(null);
+    setAdding({
+      left: absBeat * PX_PER_BEAT,
+      sectionIndex: span.sectionIndex,
+      beat: snappedRel(span.sectionIndex, rep, absBeat),
+    });
+  }
+  function commitAddLyric(text: string) {
+    if (!adding) return;
+    setWorking((prev) => addLyricAnchor(prev, { sectionIndex: adding.sectionIndex, beat: adding.beat, text }));
+    setAdding(null);
+  }
+
+  function openLyricEdit(item: TimelineItem) {
+    setSelectedId(null);
+    setAdding(null);
+    setEditingLyric({ id: item.id, left: item.absBeat * PX_PER_BEAT, text: segments.get(item.event.id) ?? '' });
+  }
+  function commitLyricEdit(text: string) {
+    if (!editingLyric) return;
+    setWorking((prev) => setEventLyric(prev, editingLyric.id, text));
+    setEditingLyric(null);
+  }
+  function splitLyricEdit(caret: number, text: string) {
+    if (!editingLyric) return;
+    const item = timeline.items.find((i) => i.id === editingLyric.id);
+    if (!item) return;
+    const span = timeline.sections[item.sectionIndex];
+    const passStart = span.startBeat + item.repetition * span.passBeats;
+    const rel = Math.max(0, Math.min(span.passBeats, item.absBeat - passStart + step));
+    setWorking((prev) => splitLyricEvent(prev, editingLyric.id, caret, text, snap(rel)));
+    setEditingLyric(null);
+  }
 
   const setEventBeat = useCallback(
     (eventId: string, sectionIndex: number, absBeat: number) => {
@@ -580,6 +664,20 @@ function ReviewEditor({
           </button>
         </div>
 
+        <button
+          className={['btn-secondary px-2 py-1', addLyric ? 'ring-2 ring-accent' : ''].join(' ')}
+          onClick={() => {
+            setAddLyric((v) => !v);
+            setAdding(null);
+            setEditingLyric(null);
+            setSelectedId(null);
+          }}
+          aria-pressed={addLyric}
+          title="Click the lane to add a lyric on its own beat"
+        >
+          <Type size={14} /> Lyric
+        </button>
+
         <div className="ml-auto flex items-center gap-2">
           <button className="btn-ghost" onClick={onRetake}>
             <RotateCcw size={15} /> Re-tag
@@ -591,13 +689,24 @@ function ReviewEditor({
       </div>
 
       <p className="mb-2 text-xs text-ink-500">
-        Drag a chord to move it; tap to select, then nudge or clear. Use{' '}
+        Drag a chord to move it; tap to select, then nudge or clear. Click a lyric to edit or
+        split it; <Type size={11} className="inline" /> Lyric drops a word on its own beat. Use{' '}
         <Plus size={11} className="inline" /> to insert a bar (pushing the rest of the song over);
         blank bars show <Trash2 size={11} className="inline" /> to delete them.
       </p>
 
       <div ref={laneRef} className="relative flex-1 overflow-x-auto rounded-2xl border border-ink-200 dark:border-ink-800">
-        <div className="relative h-full min-h-[16rem]" style={{ width: laneWidth }}>
+        <div
+          className="relative h-full min-h-[16rem]"
+          style={{ width: laneWidth }}
+          onClick={(e) => {
+            if (addLyric) onLaneAddLyric(e.clientX);
+            else {
+              setSelectedId(null);
+              setEditingLyric(null);
+            }
+          }}
+        >
           {/* Bar grid */}
           {timeline.bars.map((bar) => {
             const blank = isBlankBar(timeline, bar);
@@ -611,7 +720,10 @@ function ReviewEditor({
                 {/* Insert a bar before this one (nudged right on bar 1 so it
                     isn't clipped at the lane's left edge). */}
                 <button
-                  onClick={() => insertBar(bar.absBeat)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    insertBar(bar.absBeat);
+                  }}
                   className="absolute bottom-1 z-10 rounded-full bg-ink-100 p-1 text-ink-500 hover:bg-accent hover:text-accent-fg dark:bg-ink-800"
                   style={{ left: bar.absBeat < EPS ? 2 : -10 }}
                   title="Insert a bar here"
@@ -622,7 +734,10 @@ function ReviewEditor({
                 {/* Delete this bar if it's empty. */}
                 {blank && (
                   <button
-                    onClick={() => deleteBar(bar)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteBar(bar);
+                    }}
                     className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-100 p-1.5 text-ink-500 hover:bg-rose-500 hover:text-white dark:bg-ink-800"
                     style={{ left: (bar.beats / 2) * PX_PER_BEAT }}
                     title="Delete this empty bar"
@@ -635,24 +750,60 @@ function ReviewEditor({
             );
           })}
 
-          {/* Chord markers */}
+          {/* Chord / lyric markers, with each anchor's lyric packet beneath it */}
           {timeline.items.map((item) => {
             const sym = item.event.chord ? transposeChordSymbol(item.event.chord, 0, flats) : '·';
             const selected = item.id === selectedId;
+            const lyric = segments.get(item.event.id);
             return (
-              <button
+              <div
                 key={`${item.id}-${item.repetition}`}
-                onPointerDown={(e) => onMarkerDown(e, item.id, item.sectionIndex)}
-                className={[
-                  'absolute top-1/2 -translate-y-1/2 cursor-grab touch-none whitespace-nowrap rounded-lg px-2 py-1 text-sm font-semibold active:cursor-grabbing',
-                  selected ? 'bg-accent text-accent-fg ring-2 ring-accent' : 'bg-ink-100 text-accent dark:bg-ink-800',
-                ].join(' ')}
+                className="absolute top-1/2 -translate-y-1/2"
                 style={{ left: item.absBeat * PX_PER_BEAT }}
               >
-                {sym}
-              </button>
+                <button
+                  onPointerDown={(e) => onMarkerDown(e, item.id, item.sectionIndex)}
+                  onClick={(e) => e.stopPropagation()}
+                  className={[
+                    'cursor-grab touch-none whitespace-nowrap rounded-lg px-2 py-1 text-sm font-semibold active:cursor-grabbing',
+                    selected ? 'bg-accent text-accent-fg ring-2 ring-accent' : 'bg-ink-100 text-accent dark:bg-ink-800',
+                  ].join(' ')}
+                >
+                  {sym}
+                </button>
+                {lyric && editingLyric?.id !== item.id && (
+                  <div
+                    className="absolute left-0 top-full mt-1 cursor-text whitespace-nowrap rounded text-sm text-ink-700 hover:bg-accent/15 dark:text-ink-300"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openLyricEdit(item);
+                    }}
+                  >
+                    {lyric}
+                  </div>
+                )}
+              </div>
             );
           })}
+
+          {/* Inline add-a-lyric input (from a + Lyric lane click) */}
+          {adding && (
+            <div className="absolute top-1/2 z-20 -translate-y-1/2" style={{ left: adding.left }}>
+              <AddBeatInput kind="lyric" onCommit={commitAddLyric} onCancel={() => setAdding(null)} />
+            </div>
+          )}
+
+          {/* Inline editor over an existing lyric packet (edit / split) */}
+          {editingLyric && (
+            <div className="absolute top-1/2 z-20 mt-1 -translate-y-1/2" style={{ left: editingLyric.left }}>
+              <LyricEditor
+                initial={editingLyric.text}
+                onCommit={commitLyricEdit}
+                onSplit={splitLyricEdit}
+                onCancel={() => setEditingLyric(null)}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

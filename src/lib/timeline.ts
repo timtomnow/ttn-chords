@@ -185,3 +185,31 @@ export function buildTimeline(
 
   return { items, bars, sections, totalBeats: cursor };
 }
+
+/**
+ * The lyric "text packet" each anchored event owns: the slice of its line's
+ * lyric from its `charIndex` up to the next anchor on the same line (trimmed for
+ * display). Keyed by event id. Shared by the Highway view and the beat-tagging
+ * fine-tune editor so both show — and let you edit — the same packets.
+ */
+export function lyricSegments(items: TimelineItem[]): Map<string, string> {
+  const map = new Map<string, string>();
+  const byLine = new Map<string, number[]>();
+  for (const item of items) {
+    const idx = item.event.charIndex;
+    if (idx === undefined) continue;
+    const key = `${item.section.id}:${item.line.id}`;
+    const arr = byLine.get(key) ?? [];
+    arr.push(idx);
+    byLine.set(key, arr);
+  }
+  for (const item of items) {
+    const idx = item.event.charIndex;
+    if (idx === undefined) continue;
+    const lyric = item.line.lyric;
+    const anchors = (byLine.get(`${item.section.id}:${item.line.id}`) ?? []).filter((a) => a > idx);
+    const end = anchors.length ? Math.min(...anchors) : lyric.length;
+    map.set(item.event.id, lyric.slice(idx, end).trim());
+  }
+  return map;
+}

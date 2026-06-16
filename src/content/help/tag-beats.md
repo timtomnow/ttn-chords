@@ -22,7 +22,9 @@ along once, then fine-tune on a grid.
    **F**).
 4. When you finish, fine-tune in the editor: drag a chord on the grid, **nudge**
    it earlier/later, adjust the snap (**1/4**, **1/8**, **1/16**), or insert and
-   delete bars.
+   delete bars. You can also edit the words here — click a lyric to change or
+   split it, or use **＋ Lyric** to drop a word on its own beat. See
+   [Edit chords and lyrics on the beat grid](/help/edit-on-the-grid).
 5. Tap save to store the timing.
 
 ## What you'll see
@@ -33,4 +35,5 @@ and you can re-open Tag beats any time to adjust.
 ## Related guides
 
 - [Play along with the Highway view](/help/highway-view)
+- [Edit chords and lyrics on the beat grid](/help/edit-on-the-grid)
 - [Add difficulty versions of a song](/help/difficulty-versions)
