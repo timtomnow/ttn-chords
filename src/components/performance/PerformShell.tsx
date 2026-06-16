@@ -90,12 +90,43 @@ export function PerformShell({
     volume: prefs.volume,
   });
 
+  // One engine, two intents. The metronome button free-runs an audible click;
+  // the play button runs the song (count-in + a beat-clock view's scroll, locked
+  // to the same click). They're mutually exclusive — starting either restarts the
+  // engine from beat 0 so a song always gets a clean count-in and the downbeat
+  // accent lands where it should.
+  const [mode, setMode] = useState<'idle' | 'metronome' | 'song'>('idle');
+  const songPlaying = mode === 'song';
+
+  const restartEngine = () => {
+    metro.stop();
+    metro.start();
+  };
+  const toggleSong = () => {
+    if (mode === 'song') {
+      metro.stop();
+      setMode('idle');
+    } else {
+      restartEngine();
+      setMode('song');
+    }
+  };
+  const toggleMetronome = () => {
+    if (mode === 'metronome') {
+      metro.stop();
+      setMode('idle');
+    } else {
+      restartEngine();
+      setMode('metronome');
+    }
+  };
+
   const transport: Transport = {
-    playing: metro.playing,
+    playing: songPlaying,
     tempo,
     timeSignature,
     getPosition: metro.getPosition,
-    toggle: metro.toggle,
+    toggle: toggleSong,
     setTempo: (bpm) => setTempo(clampTempo(bpm)),
   };
 
@@ -104,6 +135,8 @@ export function PerformShell({
     setTranspose(setlist?.transpose ?? 0);
     setActiveDifficultyId(setlist?.difficultyId ?? song.defaultDifficultyId);
     setPlaying(false);
+    setMode('idle');
+    metro.stop();
     setTempo(clampTempo(song.tempo ?? prefs.tempo));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [song.id, setlist?.transpose, setlist?.difficultyId]);
@@ -122,49 +155,64 @@ export function PerformShell({
         className="flex items-center gap-2 border-b border-ink-200 px-3 py-2 dark:border-ink-800"
         style={{ paddingTop: 'calc(var(--safe-top) + 0.25rem)' }}
       >
-        <button className="btn-ghost p-2" onClick={onExit} aria-label="Exit performance">
-          <X size={18} />
-        </button>
-
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">{song.title}</div>
-          {setlist && (
-            <div className="truncate text-xs text-ink-400">
-              {setlist.label ? `${setlist.label} · ` : ''}
-              {setlist.index + 1} / {setlist.total}
-            </div>
-          )}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <button className="btn-ghost p-2" onClick={onExit} aria-label="Exit performance">
+            <X size={18} />
+          </button>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">{song.title}</div>
+            {setlist && (
+              <div className="truncate text-xs text-ink-400">
+                {setlist.label ? `${setlist.label} · ` : ''}
+                {setlist.index + 1} / {setlist.total}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Difficulty switcher (only when the song has more than one variant) */}
-        {difficulties.length > 1 && (
+        {/* Prominent, centered play/pause for beat-clock views (e.g. Highway). */}
+        {caps.beatClock && (
+          <button
+            className="flex shrink-0 items-center gap-2 rounded-full bg-accent px-7 py-2.5 text-base font-bold text-accent-fg shadow-md transition hover:opacity-90 active:scale-95"
+            onClick={toggleSong}
+            aria-label={songPlaying ? 'Pause' : 'Play'}
+            aria-pressed={songPlaying}
+          >
+            {songPlaying ? <Pause size={24} /> : <Play size={24} fill="currentColor" />}
+          </button>
+        )}
+
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+          {/* Difficulty switcher (only when the song has more than one variant) */}
+          {difficulties.length > 1 && (
+            <select
+              className="input h-8 w-auto py-0 text-sm"
+              value={activeDiff?.id ?? ''}
+              onChange={(e) => setActiveDifficultyId(e.target.value)}
+              title="Difficulty"
+            >
+              {difficulties.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label ? `${d.label} (L${d.level})` : `Level ${d.level}`}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* View switcher */}
           <select
             className="input h-8 w-auto py-0 text-sm"
-            value={activeDiff?.id ?? ''}
-            onChange={(e) => setActiveDifficultyId(e.target.value)}
-            title="Difficulty"
+            value={view?.id}
+            onChange={(e) => onViewChange(e.target.value)}
+            title="Reading view"
           >
-            {difficulties.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.label ? `${d.label} (L${d.level})` : `Level ${d.level}`}
+            {views.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
               </option>
             ))}
           </select>
-        )}
-
-        {/* View switcher */}
-        <select
-          className="input h-8 w-auto py-0 text-sm"
-          value={view?.id}
-          onChange={(e) => onViewChange(e.target.value)}
-          title="Reading view"
-        >
-          {views.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
+        </div>
       </header>
 
       {/* The view */}
@@ -250,10 +298,11 @@ export function PerformShell({
         )}
 
         <PerformMetronome
-          playing={metro.playing}
+          playing={mode === 'metronome'}
+          active={mode !== 'idle'}
           tempo={tempo}
           pulse={metro.pulse}
-          onToggle={metro.toggle}
+          onToggle={toggleMetronome}
           onTempoChange={(bpm) => setTempo(clampTempo(bpm))}
           flash={{
             enabled: prefs.flashEnabled,

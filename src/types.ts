@@ -451,8 +451,10 @@ export type AppSettings = {
   performanceViewId?: string;
   /** Bars visible at once in the Highway (side-scrolling) view. Additive. */
   horizontalBars?: number;
-  /** Count-in beats before playback in the Highway view (0, 4, or 8). Additive. */
+  /** @deprecated Count-in measured in beats; superseded by horizontalCountInBars. */
   horizontalCountIn?: number;
+  /** Count-in measured in whole bars before Highway playback (0–4). Additive. */
+  horizontalCountInBars?: number;
   /** Bar-number label size in the Highway view. Default 'sm'. Additive. */
   horizontalBarSize?: 'sm' | 'md' | 'lg';
   defaultTimeSignature?: TimeSignature;

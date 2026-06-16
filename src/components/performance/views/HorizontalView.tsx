@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Eraser, Minus, MoveHorizontal, Pause, Pencil, Play, Plus, Repeat, Trash2 } from 'lucide-react';
+import { Check, Eraser, Minus, MoveHorizontal, Pencil, Plus, Repeat, Trash2, Type } from 'lucide-react';
 import { saveSettings, updateDifficultySections, useSettings } from '@/db/repo';
 import { defaultLabelForKind, parseBeat } from '@/lib/chordpro';
 import {
@@ -22,7 +22,16 @@ import {
   quarterBeatsPerBar,
   type TimelineItem,
 } from '@/lib/timeline';
-import { addChordEvent, deleteBarAt, insertBarAt, isBlankBar, spanForBeat } from '@/lib/beatEdit';
+import {
+  addChordEvent,
+  addLyricAnchor,
+  deleteBarAt,
+  insertBarAt,
+  isBlankBar,
+  setEventLyric,
+  spanForBeat,
+  splitLyricEvent,
+} from '@/lib/beatEdit';
 import { transposeChordSymbol } from '@/lib/music';
 import { registerView } from '@/lib/performance/registry';
 import type { PerformanceViewProps } from '@/lib/performance/types';
@@ -92,7 +101,7 @@ const BAR_SIZES = {
   md: { font: 15, band: 22 },
   lg: { font: 22, band: 30 },
 } as const;
-const COUNT_INS = [0, 4, 8];
+const COUNT_IN_BARS = [0, 1, 2, 3, 4];
 const GRIDS = [
   { label: '1/4', den: 4 },
   { label: '1/8', den: 8 },
@@ -115,26 +124,32 @@ function HorizontalView({
 
   const [width, setWidth] = useState(0);
   const [nBars, setNBars] = useState(() => settings?.horizontalBars ?? 4);
-  const [countIn, setCountIn] = useState(() => settings?.horizontalCountIn ?? 4);
+  const [countInBars, setCountInBars] = useState(() => settings?.horizontalCountInBars ?? 1);
   const [playFrom, setPlayFrom] = useState(0);
   const [looping, setLooping] = useState(false);
   const [editMode, setEditMode] = useState(false);
-  const [addMode, setAddMode] = useState(false);
+  // What a stage click adds: nothing, a chord, or a lyric text packet.
+  const [addKind, setAddKind] = useState<'none' | 'chord' | 'lyric'>('none');
   const [grid, setGrid] = useState(16);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [countNum, setCountNum] = useState(0);
   const [currentBeatIdx, setCurrentBeatIdx] = useState(0);
   const [drag, setDrag] = useState<{ id: string; absBeat: number } | null>(null);
-  // Open inline "type a chord" input. `beat` is the section-relative onset; an
-  // absent lineId/charIndex means a beat-only chord (no lyric anchor).
+  // Open inline "type a chord / lyric" input. `beat` is the section-relative
+  // onset; an absent lineId/charIndex means a beat-only chord (no lyric anchor).
   const [adding, setAdding] = useState<{
+    kind: 'chord' | 'lyric';
     left: number;
     sectionIndex: number;
     beat: Beats;
     lineId?: string;
     charIndex?: number;
   } | null>(null);
+  // Inline editor over an existing lyric packet (click a packet to edit/split).
+  const [editingLyric, setEditingLyric] = useState<{ id: string; left: number; text: string } | null>(
+    null,
+  );
 
   const defaultTempo = settings?.defaultTempo ?? DEFAULT_TEMPO;
   const defaultTs = settings?.defaultTimeSignature ?? DEFAULT_TS;
@@ -150,6 +165,9 @@ function HorizontalView({
   const timed = useMemo(() => hasAnyBeats(song, difficultyId), [song, difficultyId]);
 
   const refBarBeats = quarterBeatsPerBar(song.timeSignature ?? defaults.timeSignature);
+  // Count-in is authored in whole bars; the transport clock runs in beats, so
+  // convert. Whole bars guarantee the downbeat accent lands on beat 1.
+  const countIn = countInBars * refBarBeats;
   const beatsVisible = Math.max(1, nBars * refBarBeats);
   const pxPerBeat = width > 0 ? width / beatsVisible : 0;
   const playheadX = width * PLAYHEAD_FRAC;
@@ -215,7 +233,20 @@ function HorizontalView({
       const el = scrollRef.current;
       const playing = t.playing && !editMode;
 
-      if (playing && !playingRef.current) endedRef.current = false;
+      if (playing && !playingRef.current) {
+        endedRef.current = false;
+        // Snap the start back to the top of the bar it sits in (always backwards)
+        // so the metronome's downbeat accent lands on beat 1 — never mid-bar.
+        let barStart = 0;
+        for (const bar of timeline.bars) {
+          if (bar.absBeat <= playFrom + 1e-6) barStart = bar.absBeat;
+          else break;
+        }
+        if (Math.abs(barStart - playFrom) > 1e-6) {
+          setPlayFrom(barStart);
+          currentBeatRef.current = barStart;
+        }
+      }
       if (!playing && playingRef.current) setPlayFrom(clamp(currentBeatRef.current, 0, timeline.totalBeats));
       playingRef.current = playing;
 
@@ -266,9 +297,9 @@ function HorizontalView({
     setNBars(n);
     void saveSettings({ horizontalBars: n });
   }
-  function persistCountIn(n: number) {
-    setCountIn(n);
-    void saveSettings({ horizontalCountIn: n });
+  function persistCountInBars(n: number) {
+    setCountInBars(n);
+    void saveSettings({ horizontalCountInBars: n });
   }
 
   function beatFromClientX(clientX: number): number | null {
@@ -356,8 +387,9 @@ function HorizontalView({
     return snapBeats(Math.round(rel / step) * step);
   }
 
-  /** Open the inline chord input from a click, given the resolved placement. */
+  /** Open the inline chord/lyric input from a click, given the resolved placement. */
   function openAdd(p: {
+    kind: 'chord' | 'lyric';
     sectionIndex: number;
     repetition: number;
     beat: Beats;
@@ -367,7 +399,9 @@ function HorizontalView({
     const span = timeline.sections[p.sectionIndex];
     const abs = span.startBeat + p.repetition * span.passBeats + beatsToNumber(p.beat);
     setSelectedId(null);
+    setEditingLyric(null);
     setAdding({
+      kind: p.kind,
       left: abs * pxPerBeat,
       sectionIndex: p.sectionIndex,
       beat: p.beat,
@@ -376,8 +410,8 @@ function HorizontalView({
     });
   }
 
-  /** Click on empty grid in add-mode → a beat-only chord at that beat. */
-  function onStageAdd(clientX: number) {
+  /** Click on empty grid in add-mode → a chord or lyric anchor at that beat. */
+  function onStageAdd(clientX: number, kind: 'chord' | 'lyric') {
     const absBeat = beatFromClientX(clientX);
     if (absBeat === null) return;
     const span = spanForBeat(timeline, absBeat);
@@ -387,14 +421,15 @@ function HorizontalView({
       0,
       Math.max(0, Math.round(span.lengthBeats / span.passBeats) - 1),
     );
-    openAdd({ sectionIndex: span.sectionIndex, repetition: rep, beat: snappedRel(span.sectionIndex, rep, absBeat) });
+    openAdd({ kind, sectionIndex: span.sectionIndex, repetition: rep, beat: snappedRel(span.sectionIndex, rep, absBeat) });
   }
 
-  /** Click a lyric character in add-mode → a chord anchored over that letter. */
+  /** Click a lyric character in chord-add mode → a chord anchored over that letter. */
   function onLyricCharClick(clientX: number, item: TimelineItem, charOffset: number) {
     const absBeat = beatFromClientX(clientX);
     if (absBeat === null) return;
     openAdd({
+      kind: 'chord',
       sectionIndex: item.sectionIndex,
       repetition: item.repetition,
       beat: snappedRel(item.sectionIndex, item.repetition, absBeat),
@@ -403,18 +438,44 @@ function HorizontalView({
     });
   }
 
-  function commitAdd(chord: string) {
+  function commitAdd(text: string) {
     if (!adding) return;
     writeSections(
-      addChordEvent(sections, {
-        sectionIndex: adding.sectionIndex,
-        chord,
-        beat: adding.beat,
-        lineId: adding.lineId,
-        charIndex: adding.charIndex,
-      }),
+      adding.kind === 'lyric'
+        ? addLyricAnchor(sections, { sectionIndex: adding.sectionIndex, beat: adding.beat, text })
+        : addChordEvent(sections, {
+            sectionIndex: adding.sectionIndex,
+            chord: text,
+            beat: adding.beat,
+            lineId: adding.lineId,
+            charIndex: adding.charIndex,
+          }),
     );
     setAdding(null);
+  }
+
+  // ── Edit an existing lyric packet ──
+  function openLyricEdit(item: TimelineItem) {
+    setSelectedId(null);
+    setAdding(null);
+    setEditingLyric({ id: item.id, left: item.absBeat * pxPerBeat, text: segments.get(item.event.id) ?? '' });
+  }
+  function commitLyricEdit(text: string) {
+    if (!editingLyric) return;
+    writeSections(setEventLyric(sections, editingLyric.id, text));
+    setEditingLyric(null);
+  }
+  /** Split the packet at the caret: the second half becomes a chord-less anchor
+   * one grid step later so it can be dragged onto its own beat. */
+  function splitLyricEdit(caret: number, text: string) {
+    if (!editingLyric) return;
+    const item = timeline.items.find((i) => i.id === editingLyric.id);
+    if (!item) return;
+    const span = timeline.sections[item.sectionIndex];
+    const passStart = span.startBeat + item.repetition * span.passBeats;
+    const rel = clamp(item.absBeat - passStart + step, 0, span.passBeats);
+    writeSections(splitLyricEvent(sections, editingLyric.id, caret, text, snapBeats(rel)));
+    setEditingLyric(null);
   }
 
   if (!timed) {
@@ -459,10 +520,7 @@ function HorizontalView({
       <div className="flex flex-wrap items-center gap-2 border-b border-ink-200 px-3 py-2 text-sm dark:border-ink-800">
         {!editMode ? (
           <>
-            <button className="btn-primary px-3 py-1.5" onClick={() => transport.toggle()} aria-label={playing ? 'Pause' : 'Play'}>
-              {playing ? <Pause size={16} /> : <Play size={16} />}
-            </button>
-
+            {/* Play/pause lives in the performance header now (big & centered). */}
             <select
               className="input h-8 w-auto py-0"
               value=""
@@ -491,10 +549,10 @@ function HorizontalView({
 
             <label className="flex items-center gap-1 text-ink-500">
               Count-in
-              <select className="input h-8 w-auto py-0" value={countIn} onChange={(e) => persistCountIn(Number(e.target.value))}>
-                {COUNT_INS.map((n) => (
+              <select className="input h-8 w-auto py-0" value={countInBars} onChange={(e) => persistCountInBars(Number(e.target.value))}>
+                {COUNT_IN_BARS.map((n) => (
                   <option key={n} value={n}>
-                    {n}
+                    {n === 0 ? 'Off' : n === 1 ? '1 bar' : `${n} bars`}
                   </option>
                 ))}
               </select>
@@ -527,16 +585,30 @@ function HorizontalView({
               <Eraser size={15} />
             </button>
             <button
-              className={['btn-secondary px-2 py-1.5', addMode ? 'ring-2 ring-accent' : ''].join(' ')}
+              className={['btn-secondary px-2 py-1.5', addKind === 'chord' ? 'ring-2 ring-accent' : ''].join(' ')}
               onClick={() => {
-                setAddMode((v) => !v);
+                setAddKind((k) => (k === 'chord' ? 'none' : 'chord'));
                 setAdding(null);
+                setEditingLyric(null);
                 setSelectedId(null);
               }}
-              aria-pressed={addMode}
+              aria-pressed={addKind === 'chord'}
               title="Click the grid or a lyric letter to add a chord"
             >
               <Plus size={15} /> Chord
+            </button>
+            <button
+              className={['btn-secondary px-2 py-1.5', addKind === 'lyric' ? 'ring-2 ring-accent' : ''].join(' ')}
+              onClick={() => {
+                setAddKind((k) => (k === 'lyric' ? 'none' : 'lyric'));
+                setAdding(null);
+                setEditingLyric(null);
+                setSelectedId(null);
+              }}
+              aria-pressed={addKind === 'lyric'}
+              title="Click the grid to add a lyric on its own beat"
+            >
+              <Type size={15} /> Lyric
             </button>
           </>
         )}
@@ -562,8 +634,9 @@ function HorizontalView({
             onClick={() => {
               setEditMode((v) => !v);
               setSelectedId(null);
-              setAddMode(false);
+              setAddKind('none');
               setAdding(null);
+              setEditingLyric(null);
             }}
             aria-pressed={editMode}
           >
@@ -583,9 +656,11 @@ function HorizontalView({
             style={{ width: laneWidth || '100%' }}
             onClick={(e) => {
               if (playing) return;
-              if (editMode && addMode) onStageAdd(e.clientX);
-              else if (editMode) setSelectedId(null);
-              else setStartFromClientX(e.clientX);
+              if (editMode && addKind !== 'none') onStageAdd(e.clientX, addKind);
+              else if (editMode) {
+                setSelectedId(null);
+                setEditingLyric(null);
+              } else setStartFromClientX(e.clientX);
             }}
           >
             {/* Current-beat tracking highlight (accent), at the bar-number band */}
@@ -699,15 +774,26 @@ function HorizontalView({
                     >
                       {sym}
                     </button>
-                    {lyric && (
+                    {lyric && editingLyric?.id !== item.id && (
                       <div
                         className={[
                           'absolute whitespace-nowrap text-ink-700 dark:text-ink-300',
-                          editMode && addMode ? '' : 'pointer-events-none',
+                          editMode ? '' : 'pointer-events-none',
+                          editMode && addKind !== 'chord'
+                            ? 'cursor-text rounded hover:bg-accent/15'
+                            : '',
                         ].join(' ')}
                         style={{ fontSize: `${fontScale}rem`, top: `${fontScale * 2 + row * fontScale * 1.35}rem` }}
+                        onClick={
+                          editMode && addKind !== 'chord'
+                            ? (e) => {
+                                e.stopPropagation();
+                                openLyricEdit(item);
+                              }
+                            : undefined
+                        }
                       >
-                        {editMode && addMode
+                        {editMode && addKind === 'chord'
                           ? Array.from(lyric).map((ch, ci) => (
                               <span
                                 key={ci}
@@ -727,10 +813,26 @@ function HorizontalView({
                 );
               })}
 
-            {/* Inline "type a chord" input opened by an add-mode click. */}
+            {/* Inline "type a chord / lyric" input opened by an add-mode click. */}
             {adding && (
               <div className="absolute z-30" style={{ left: adding.left, top: '34%' }}>
-                <AddChordInput onCommit={commitAdd} onCancel={() => setAdding(null)} />
+                <AddChordInput
+                  kind={adding.kind}
+                  onCommit={commitAdd}
+                  onCancel={() => setAdding(null)}
+                />
+              </div>
+            )}
+
+            {/* Inline editor over an existing lyric packet (edit / split). */}
+            {editingLyric && (
+              <div className="absolute z-30" style={{ left: editingLyric.left, top: '34%' }}>
+                <LyricEditor
+                  initial={editingLyric.text}
+                  onCommit={commitLyricEdit}
+                  onSplit={splitLyricEdit}
+                  onCancel={() => setEditingLyric(null)}
+                />
               </div>
             )}
           </div>
@@ -771,16 +873,19 @@ function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
 }
 
-/** Tiny auto-focused field for typing a new chord symbol. Enter commits a
- * non-empty value; Escape or blur cancels. */
+/** Tiny auto-focused field for typing a new chord symbol or lyric. Enter commits
+ * a non-empty value; Escape or blur cancels. */
 function AddChordInput({
+  kind,
   onCommit,
   onCancel,
 }: {
-  onCommit: (chord: string) => void;
+  kind: 'chord' | 'lyric';
+  onCommit: (value: string) => void;
   onCancel: () => void;
 }) {
   const [value, setValue] = useState('');
+  const lyric = kind === 'lyric';
   return (
     <input
       autoFocus
@@ -792,17 +897,73 @@ function AddChordInput({
         e.stopPropagation();
         if (e.key === 'Enter') {
           e.preventDefault();
-          const chord = value.trim();
-          if (chord) onCommit(chord);
+          const v = value.trim();
+          if (v) onCommit(v);
           else onCancel();
         } else if (e.key === 'Escape') {
           e.preventDefault();
           onCancel();
         }
       }}
-      placeholder="chord"
-      className="w-20 rounded-lg border-2 border-accent bg-white px-2 py-1 text-sm font-semibold text-accent shadow dark:bg-ink-900"
+      placeholder={lyric ? 'lyric' : 'chord'}
+      className={[
+        'rounded-lg border-2 border-accent bg-white px-2 py-1 text-sm font-semibold shadow dark:bg-ink-900',
+        lyric ? 'w-40 text-ink-800 dark:text-ink-100' : 'w-20 text-accent',
+      ].join(' ')}
     />
+  );
+}
+
+/** Inline editor over an existing lyric packet: edit the text (Enter saves) or
+ * split it at the caret into two packets (the second gets its own beat). */
+function LyricEditor({
+  initial,
+  onCommit,
+  onSplit,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (text: string) => void;
+  onSplit: (caret: number, text: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div
+      className="flex items-center gap-1 rounded-lg border-2 border-accent bg-white p-1 shadow dark:bg-ink-900"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        ref={ref}
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={onCancel}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onCommit(value);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        placeholder="lyric"
+        className="w-40 rounded bg-transparent px-1 py-0.5 text-sm font-semibold text-ink-800 outline-none dark:text-ink-100"
+      />
+      <button
+        type="button"
+        // Keep input focus so onBlur doesn't cancel before this fires.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onSplit(ref.current?.selectionStart ?? value.length, value)}
+        className="rounded bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-600 hover:bg-accent hover:text-accent-fg dark:bg-ink-800 dark:text-ink-300"
+        title="Split at the cursor; the second half gets its own beat"
+      >
+        Split
+      </button>
+    </div>
   );
 }
 

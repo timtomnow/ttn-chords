@@ -28,13 +28,18 @@ export type MetronomeFlashPrefs = {
 
 export function PerformMetronome({
   playing,
+  active = playing,
   tempo,
   pulse,
   onToggle,
   onTempoChange,
   flash,
 }: {
+  /** The metronome is the active intent — drives the button highlight. */
   playing: boolean;
+  /** The engine is audibly clicking (metronome OR song mode) — drives the flash.
+   *  Defaults to `playing`. */
+  active?: boolean;
   tempo: number;
   pulse: MetronomePulse | null;
   onToggle: () => void;
@@ -43,7 +48,7 @@ export function PerformMetronome({
 }) {
   return (
     <>
-      {playing && flash.enabled && (
+      {active && flash.enabled && (
         <MetronomeFlash
           pulse={pulse}
           shape={flash.shape}

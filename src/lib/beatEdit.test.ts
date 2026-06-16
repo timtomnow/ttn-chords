@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   addChordEvent,
+  addLyricAnchor,
   deleteBarAt,
   insertBarAt,
   isBlankBar,
+  setEventLyric,
   shiftSectionEvents,
+  splitLyricEvent,
 } from './beatEdit';
 import { DEFAULT_TS, DEFAULT_TEMPO, beatsToNumber, buildTimeline } from './timeline';
 import type { Beats, ChordEvent, Section, Song } from '@/types';
@@ -113,5 +116,86 @@ describe('addChordEvent', () => {
     const out = addChordEvent(s, { sectionIndex: 0, chord: 'A', beat: b(0) });
     expect(out[0].lines).toHaveLength(1);
     expect(out[0].lines[0].events[0].chord).toBe('A');
+  });
+});
+
+// A line with two anchored packets: "Hello " (event H @0) and "world" (event W @6).
+function lyricSection() {
+  const H: ChordEvent = { id: 'H', chord: 'G', beat: b(0), charIndex: 0 };
+  const W: ChordEvent = { id: 'W', chord: 'C', beat: b(2), charIndex: 6 };
+  return [section([], { lines: [{ id: 'L', lyric: 'Hello world', events: [H, W] }] })];
+}
+const lyricOf = (out: Section[]) => out[0].lines[0].lyric;
+const evById = (out: Section[], id: string) => out[0].lines[0].events.find((e) => e.id === id)!;
+
+describe('setEventLyric', () => {
+  it('rewrites a packet and shifts later anchors by the length delta', () => {
+    const out = setEventLyric(lyricSection(), 'H', 'Hi');
+    expect(lyricOf(out)).toBe('Hi world');
+    expect(evById(out, 'H').charIndex).toBe(0);
+    expect(evById(out, 'W').charIndex).toBe(3); // 6 + (3 - 6)
+  });
+
+  it('keeps a separating space when the new text drops its own', () => {
+    const out = setEventLyric(lyricSection(), 'H', 'Hey');
+    expect(lyricOf(out)).toBe('Hey world');
+    expect(evById(out, 'W').charIndex).toBe(4);
+  });
+
+  it('edits the trailing packet without a forced space', () => {
+    const out = setEventLyric(lyricSection(), 'W', 'earth');
+    expect(lyricOf(out)).toBe('Hello earth');
+  });
+
+  it('blank text deletes the slice and unanchors the event', () => {
+    const out = setEventLyric(lyricSection(), 'W', '   ');
+    expect(lyricOf(out)).toBe('Hello ');
+    expect(evById(out, 'W').charIndex).toBeUndefined();
+    expect(evById(out, 'W').chord).toBe('C'); // chord kept, now trailing
+  });
+
+  it('anchors and appends text to an event that had none', () => {
+    const s = [section([], { lines: [{ id: 'L', lyric: 'na na', events: [{ id: 'X', chord: 'A', beat: b(1) }] }] })];
+    const out = setEventLyric(s, 'X', 'hey');
+    expect(lyricOf(out)).toBe('na na hey');
+    expect(evById(out, 'X').charIndex).toBe(6);
+  });
+});
+
+describe('splitLyricEvent', () => {
+  it('keeps the first half and gives the second a new chord-less anchor on its own beat', () => {
+    // Split "Hello" packet text "Hello " at offset 2 → "He" | "llo".
+    const out = splitLyricEvent(lyricSection(), 'H', 2, 'Hello', b(1));
+    expect(lyricOf(out)).toBe('He llo world');
+    const events = out[0].lines[0].events;
+    const added = events.find((e) => e.id !== 'H' && e.id !== 'W')!;
+    expect(added.chord).toBe('');
+    expect(beatsToNumber(added.beat!)).toBe(1);
+    expect(added.charIndex).toBe(3); // after "He "
+    expect(evById(out, 'W').charIndex).toBe(7); // shifted by +1
+  });
+
+  it('is a plain text edit when one side of the split is empty', () => {
+    const out = splitLyricEvent(lyricSection(), 'H', 0, 'Hello', b(1));
+    expect(out[0].lines[0].events).toHaveLength(2); // no new anchor
+    expect(lyricOf(out)).toBe('Hello world');
+  });
+});
+
+describe('addLyricAnchor', () => {
+  it('appends text to the first line and anchors a chord-less event at its beat', () => {
+    const out = addLyricAnchor(lyricSection(), { sectionIndex: 0, beat: b(8), text: 'again' });
+    expect(lyricOf(out)).toBe('Hello world again');
+    const added = out[0].lines[0].events.find((e) => e.id !== 'H' && e.id !== 'W')!;
+    expect(added.chord).toBe('');
+    expect(added.charIndex).toBe(12);
+    expect(beatsToNumber(added.beat!)).toBe(8);
+  });
+
+  it('creates a line for an empty section', () => {
+    const s = [section([], { lines: [] })];
+    const out = addLyricAnchor(s, { sectionIndex: 0, beat: b(0), text: 'oh' });
+    expect(out[0].lines[0].lyric).toBe('oh');
+    expect(out[0].lines[0].events[0].charIndex).toBe(0);
   });
 });
