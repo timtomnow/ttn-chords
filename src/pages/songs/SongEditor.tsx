@@ -8,6 +8,7 @@ import {
   EyeOff,
   GripVertical,
   Plus,
+  SplitSquareVertical,
   Star,
   Trash2,
 } from 'lucide-react';
@@ -217,6 +218,30 @@ function Editor({ song }: { song: Song }) {
     patchActiveSections((prev) => prev.filter((s) => s.id !== sid));
   }
 
+  // Split a section at the textarea caret: everything from the caret onward moves
+  // into a fresh section card right below (inheriting kind + rhythm). Used to
+  // break a whole song pasted into one card into per-section cards.
+  function splitSection(sid: string, atChar: number) {
+    patchActiveSections((prev) => {
+      const idx = prev.findIndex((s) => s.id === sid);
+      if (idx === -1) return prev;
+      const s = prev[idx];
+      const before = s.body.slice(0, atChar).replace(/\n+$/, '');
+      const after = s.body.slice(atChar).replace(/^\n+/, '');
+      if (after.trim() === '') return prev; // nothing to move
+      const moved: EditSection = {
+        id: newId(),
+        kind: s.kind,
+        body: after,
+        rhythmPatternId: s.rhythmPatternId,
+      };
+      const next = [...prev];
+      next[idx] = { ...s, body: before };
+      next.splice(idx + 1, 0, moved);
+      return next;
+    });
+  }
+
   function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
@@ -393,6 +418,7 @@ function Editor({ song }: { song: Song }) {
                 flats={flats}
                 onChange={(patch) => updateSection(s.id, patch)}
                 onRemove={() => removeSection(s.id)}
+                onSplit={(atChar) => splitSection(s.id, atChar)}
               />
             ))}
           </div>
@@ -412,12 +438,14 @@ function SortableSection({
   flats,
   onChange,
   onRemove,
+  onSplit,
 }: {
   section: EditSection;
   preview: boolean;
   flats: boolean;
   onChange: (patch: Partial<EditSection>) => void;
   onRemove: () => void;
+  onSplit: (atChar: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: section.id,
@@ -431,6 +459,10 @@ function SortableSection({
   const patterns = useRhythmPatterns();
   const [newPatternOpen, setNewPatternOpen] = useState(false);
   const lines = useMemo(() => parseLines(section.body), [section.body]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Last known caret offset — read on demand so the toolbar Split button works
+  // even though clicking it blurs the textarea.
+  const caretRef = useRef(0);
 
   // Special sentinel value the rhythm select uses to trigger inline creation.
   const CREATE = '__create__';
@@ -480,6 +512,14 @@ function SortableSection({
           ))}
           <option value={CREATE}>+ New pattern…</option>
         </select>
+        <button
+          className="btn-ghost p-1.5"
+          onClick={() => onSplit(textareaRef.current?.selectionStart ?? caretRef.current)}
+          title="Split here — move everything from the cursor down into a new section"
+          aria-label="Split section at cursor"
+        >
+          <SplitSquareVertical size={15} />
+        </button>
         <button className="btn-ghost p-1.5 text-red-600" onClick={onRemove} aria-label="Remove section">
           <Trash2 size={15} />
         </button>
@@ -487,10 +527,14 @@ function SortableSection({
 
       <div className="grid gap-0 md:grid-cols-2">
         <textarea
+          ref={textareaRef}
           className="input min-h-[8rem] resize-y rounded-none border-0 font-mono text-xs focus:ring-0 md:border-r md:border-ink-200 md:dark:border-ink-800"
           placeholder={'[G]Type lyrics with [C]inline chords…'}
           value={section.body}
           onChange={(e) => onChange({ body: e.target.value })}
+          onSelect={(e) => {
+            caretRef.current = e.currentTarget.selectionStart;
+          }}
           spellCheck={false}
         />
         {preview && (

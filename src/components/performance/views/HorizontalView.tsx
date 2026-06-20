@@ -721,6 +721,9 @@ function HorizontalView({
                 const sym = item.event.chord
                   ? transposeChordSymbol(item.event.chord, transpose, preferFlats)
                   : '·';
+                // A placeholder onset (no chord, or a bare ".") isn't a real
+                // chord — render it muted so it reads as a faint timing dot.
+                const marker = !item.event.chord || item.event.chord === '.';
                 const lyric = segments.get(item.event.id);
                 const active = item.id === currentId;
                 const selected = editMode && item.id === selectedId;
@@ -738,13 +741,18 @@ function HorizontalView({
                         onChordClick(sym, { x: r.left + r.width / 2, y: r.bottom });
                       }}
                       className={[
-                        'whitespace-nowrap rounded-lg px-2 py-1 font-semibold leading-none transition-colors',
+                        'whitespace-nowrap rounded-lg px-2 py-1 leading-none transition-colors',
+                        marker ? 'font-normal' : 'font-semibold',
                         editMode ? 'cursor-grab touch-none active:cursor-grabbing' : '',
                         selected
                           ? 'bg-accent text-accent-fg ring-2 ring-accent'
                           : active
-                            ? 'bg-accent text-accent-fg'
-                            : 'bg-ink-100 text-accent dark:bg-ink-800',
+                            ? marker
+                              ? 'bg-ink-200 text-ink-400 dark:bg-ink-800 dark:text-ink-500'
+                              : 'bg-accent text-accent-fg'
+                            : marker
+                              ? 'bg-ink-100/60 text-ink-400 dark:bg-ink-800/50 dark:text-ink-600'
+                              : 'bg-ink-100 text-accent dark:bg-ink-800',
                       ].join(' ')}
                       style={{ fontSize: `${fontScale * 1.1}rem` }}
                     >

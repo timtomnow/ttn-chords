@@ -85,6 +85,11 @@ function renderChordRow(row: string, onClick: ChordClick | undefined) {
 }
 
 function ClickableChord({ chord, onClick }: { chord: string; onClick?: ChordClick }) {
+  // Marker/placeholder chords (a bare ".") aren't real chords — show them muted
+  // and non-interactive so they read as faint timing dots, not chord names.
+  if (chord === '.') {
+    return <span className="font-normal text-ink-400 dark:text-ink-600">{chord}</span>;
+  }
   if (!onClick) return <span>{chord}</span>;
   return (
     <button
