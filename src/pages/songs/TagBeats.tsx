@@ -16,7 +16,7 @@ import { updateDifficultySections, useSettings, useSong } from '@/db/repo';
 import { sectionsOf } from '@/lib/song';
 import { TempoInput } from '@/components/inputs/TempoInput';
 import { AddBeatInput, LyricEditor } from '@/components/inputs/InlineBeatInputs';
-import { useMetronome } from '@/components/tools/useMetronome';
+import { useMetronome, type MetronomePulse } from '@/components/tools/useMetronome';
 import { parseBeat } from '@/lib/chordpro';
 import { clampTempo } from '@/lib/metronome';
 import { preferFlatsForKey, transposeChordSymbol } from '@/lib/music';
@@ -69,6 +69,75 @@ function snap(x: number): Beats {
 function snapToGrid(x: number, grid: number): Beats {
   const step = 4 / grid;
   return snap(Math.round(Math.max(0, x) / step) * step);
+}
+
+/** How the count-in / beat metronome makes itself heard or seen while tagging. */
+type MetroMode = 'flash' | 'sound' | 'both';
+const METRO_MODES: { value: MetroMode; label: string }[] = [
+  { value: 'flash', label: 'Flash' },
+  { value: 'sound', label: 'Sound' },
+  { value: 'both', label: 'Both' },
+];
+const metroHasSound = (m: MetroMode) => m !== 'flash';
+const metroHasFlash = (m: MetroMode) => m !== 'sound';
+
+/** Flash / Sound / Both segmented control for the start screen. */
+function MetroModeSelector({ mode, setMode }: { mode: MetroMode; setMode: (m: MetroMode) => void }) {
+  return (
+    <div className="flex items-center gap-1 rounded-xl bg-ink-100 p-1 dark:bg-ink-800">
+      {METRO_MODES.map((m) => (
+        <button
+          key={m.value}
+          onClick={() => setMode(m.value)}
+          className={[
+            'rounded-lg px-2 py-0.5 text-sm font-medium',
+            mode === m.value ? 'bg-accent text-accent-fg' : 'hover:bg-ink-200 dark:hover:bg-ink-700',
+          ].join(' ')}
+        >
+          {m.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Small circle that blinks on each beat (count-in + recording). Sits below the
+ * chords so it stays out of the way; accent beats use a distinct color. Driven
+ * by the metronome `pulse` — works whether or not the click sound is enabled. */
+function BeatFlash({
+  pulse,
+  accentColor,
+  beatColor,
+}: {
+  pulse: MetronomePulse | null;
+  accentColor: string;
+  beatColor: string;
+}) {
+  const [on, setOn] = useState(false);
+  // Subdivisions don't flash — only actual beats — to keep it readable.
+  const isBeat = pulse?.level !== 'sub';
+  const color = pulse?.level === 'accent' ? accentColor : beatColor;
+
+  useEffect(() => {
+    if (!pulse || !isBeat) return;
+    setOn(true);
+    const t = setTimeout(() => setOn(false), 90);
+    return () => clearTimeout(t);
+    // Re-run on every pulse via its monotonically increasing counter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pulse?.n]);
+
+  return (
+    <div
+      aria-hidden
+      className="h-7 w-7 rounded-full transition-all duration-100 ease-out"
+      style={{
+        backgroundColor: color,
+        opacity: on ? 0.9 : 0.15,
+        transform: on ? 'scale(1)' : 'scale(0.7)',
+      }}
+    />
+  );
 }
 
 /** A 1/4 · 1/8 · 1/16 segmented control, shared by the start screen + editor. */
@@ -155,14 +224,18 @@ function Tagger({ song }: { song: Song }) {
   const [posBeat, setPosBeat] = useState(0);
   const [working, setWorking] = useState<Section[]>(baseSections);
   const [grid, setGrid] = useState(DEFAULT_GRID);
+  const [metroMode, setMetroMode] = useState<MetroMode>('both');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const recorded = useRef<(number | undefined)[]>([]);
+
+  const flashAccentColor = settings?.metronome?.flashAccentColor ?? '#22c55e';
+  const flashBeatColor = settings?.metronome?.flashBeatColor ?? '#64748b';
 
   const metro = useMetronome({
     tempo,
     beatsPerMeasure: ts.beats,
     subdivision: 1,
-    soundEnabled: settings?.metronome?.soundEnabled ?? true,
+    soundEnabled: metroHasSound(metroMode),
     sound: settings?.metronome?.sound ?? 'beep',
     accentDownbeat: settings?.metronome?.accentDownbeat ?? true,
     volume: settings?.metronome?.volume ?? 0.7,
@@ -295,6 +368,10 @@ function Tagger({ song }: { song: Song }) {
             <span className="label">Snap</span>
             <SnapSelector grid={grid} setGrid={setGrid} />
           </div>
+          <div className="flex items-center justify-center gap-2">
+            <span className="label">Metronome</span>
+            <MetroModeSelector mode={metroMode} setMode={setMetroMode} />
+          </div>
           <button className="btn-primary px-6 py-2 text-base" onClick={start}>
             Start
           </button>
@@ -309,6 +386,10 @@ function Tagger({ song }: { song: Song }) {
           transpose={0}
           flats={flats}
           countNum={phase === 'countin' ? Math.max(1, ts.beats - Math.floor(posBeat)) : 0}
+          flashEnabled={metroHasFlash(metroMode)}
+          pulse={metro.pulse}
+          flashAccentColor={flashAccentColor}
+          flashBeatColor={flashBeatColor}
           onTap={tap}
           onDone={finishRecording}
         />
@@ -340,6 +421,10 @@ function RecordingView({
   transpose,
   flats,
   countNum,
+  flashEnabled,
+  pulse,
+  flashAccentColor,
+  flashBeatColor,
   onTap,
   onDone,
 }: {
@@ -350,6 +435,12 @@ function RecordingView({
   flats: boolean;
   /** > 0 during the count-in (the beats remaining); 0 once recording. */
   countNum: number;
+  /** Whether to show the visual beat flash below the chords. */
+  flashEnabled: boolean;
+  /** Metronome pulse that drives the flash. */
+  pulse: MetronomePulse | null;
+  flashAccentColor: string;
+  flashBeatColor: string;
   onTap: () => void;
   onDone: () => void;
 }) {
@@ -404,6 +495,12 @@ function RecordingView({
           {next1 && <ChordBlock chord={show(next1.chord)} context={next1.context} variant="next" />}
           {next2 && <ChordBlock chord={show(next2.chord)} context={next2.context} variant="upcoming" />}
         </div>
+
+        {/* Visual metronome — a small circle, well below the chords so it stays
+            out of the way of what you're reading. Only present when flash is on. */}
+        {flashEnabled && (
+          <BeatFlash pulse={pulse} accentColor={flashAccentColor} beatColor={flashBeatColor} />
+        )}
       </button>
     </div>
   );
