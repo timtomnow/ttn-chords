@@ -5,6 +5,7 @@ import {
   DEFAULT_TS,
   DEFAULT_TEMPO,
   hasAnyBeats,
+  lyricPackets,
   quarterBeatsPerBar,
 } from './timeline';
 import type { Beats, ChordEvent, Section, Song, TimeSignature } from '@/types';
@@ -24,6 +25,9 @@ function section(events: ChordEvent[], extra: Partial<Section> = {}): Section {
     lines: [{ id: id(), lyric: 'la la la', events }],
     ...extra,
   };
+}
+function evAt(chord: string, charIndex: number, beat?: Beats): ChordEvent {
+  return beat ? { id: id(), chord, charIndex, beat } : { id: id(), chord, charIndex };
 }
 function song(sections: Section[], extra: Partial<Song> = {}): Song {
   return {
@@ -91,6 +95,32 @@ describe('buildTimeline', () => {
     expect(tl.items.map((i) => i.absBeat)).toEqual([0, 2, 4, 6]);
     expect(tl.totalBeats).toBe(8);
     expect(tl.bars.map((bar) => bar.absBeat)).toEqual([0, 4]);
+  });
+
+  it('runs a lyric packet on past line breaks and section ends until the next chord', () => {
+    const g = evAt('G', 0, b(0));
+    const c = evAt('C', 0, b(0));
+    const s1 = section([g], {
+      lines: [
+        { id: id(), lyric: 'hello world', events: [g] },
+        { id: id(), lyric: 'second line', events: [] }, // no chord → absorbed
+      ],
+    });
+    const s2 = section([c], { lines: [{ id: id(), lyric: 'third', events: [c] }] });
+    const packets = lyricPackets(buildTimeline(song([s1, s2]), defaults));
+    expect(packets.get(g.id)).toBe('hello world second line');
+    expect(packets.get(c.id)).toBe('third');
+  });
+
+  it('does not split a packet at a chord with no beat', () => {
+    const g = evAt('G', 0, b(0));
+    const x = evAt('X', 6); // anchored but untimed → not a boundary
+    const s = section([g, x], {
+      lines: [{ id: id(), lyric: 'hello world', events: [g, x] }],
+    });
+    const packets = lyricPackets(buildTimeline(song([s]), defaults));
+    expect(packets.get(g.id)).toBe('hello world');
+    expect(packets.has(x.id)).toBe(false);
   });
 
   it('falls back to one bar per lyric line for an untimed section', () => {

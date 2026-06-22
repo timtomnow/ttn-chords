@@ -189,8 +189,10 @@ export function buildTimeline(
 /**
  * The lyric "text packet" each anchored event owns: the slice of its line's
  * lyric from its `charIndex` up to the next anchor on the same line (trimmed for
- * display). Keyed by event id. Shared by the Highway view and the beat-tagging
- * fine-tune editor so both show — and let you edit — the same packets.
+ * display). Keyed by event id. This is the *editable* unit — `lib/beatEdit`'s
+ * `setEventLyric`/`splitLyricEvent` rewrite exactly this line slice — so it must
+ * stay within a single line. For the Highway's *display* packets (which run on
+ * across line breaks) see `lyricPackets`.
  */
 export function lyricSegments(items: TimelineItem[]): Map<string, string> {
   const map = new Map<string, string>();
@@ -211,5 +213,63 @@ export function lyricSegments(items: TimelineItem[]): Map<string, string> {
     const end = anchors.length ? Math.min(...anchors) : lyric.length;
     map.set(item.event.id, lyric.slice(idx, end).trim());
   }
+  return map;
+}
+
+/**
+ * The lyric "text packet" each anchored chord *displays* in the Highway view:
+ * every word from that chord's `charIndex` up to the *next chord* — continuing
+ * past line breaks and even past the end of a section (newlines become spaces),
+ * so a held phrase reads as one packet instead of being chopped at each line.
+ * Keyed by event id. A chord's boundary is the next anchored chord that also
+ * appears on the timeline (i.e. has a beat); chords with no beat don't split a
+ * packet. This is display-only — edit with `lyricSegments` + `beatEdit`.
+ */
+export function lyricPackets(timeline: Timeline): Map<string, string> {
+  const map = new Map<string, string>();
+
+  // Only chords anchored to a lyric AND placed on the timeline (have a beat)
+  // bound a packet. Repeats collapse to the same event id.
+  const boundary = new Set<string>();
+  for (const item of timeline.items) {
+    if (item.event.charIndex !== undefined) boundary.add(item.event.id);
+  }
+
+  const tidy = (parts: string[]) => parts.join(' ').replace(/\s+/g, ' ').trim();
+
+  // Walk the song in reading order, accumulating text into the currently-open
+  // packet. A line with no boundary chord contributes all of its text to the
+  // packet still open from an earlier line/section.
+  let current: { id: string; parts: string[] } | null = null;
+  const flush = () => {
+    if (current) map.set(current.id, tidy(current.parts));
+  };
+
+  for (const span of timeline.sections) {
+    for (const line of span.section.lines) {
+      const lyric = line.lyric;
+      const anchors = line.events
+        .filter((e) => e.charIndex !== undefined && boundary.has(e.id))
+        .map((e) => ({ id: e.id, idx: e.charIndex as number }))
+        .sort((a, b) => a.idx - b.idx);
+
+      if (!anchors.length) {
+        if (current) current.parts.push(lyric);
+        continue;
+      }
+
+      // Text before the first chord on this line belongs to the open packet.
+      if (current) current.parts.push(lyric.slice(0, anchors[0].idx));
+      // Each chord opens a packet that runs to the next chord on this line;
+      // the last one stays open to absorb following lines/sections.
+      for (let i = 0; i < anchors.length; i++) {
+        flush();
+        const end = i + 1 < anchors.length ? anchors[i + 1].idx : lyric.length;
+        current = { id: anchors[i].id, parts: [lyric.slice(anchors[i].idx, end)] };
+      }
+    }
+  }
+  flush();
+
   return map;
 }

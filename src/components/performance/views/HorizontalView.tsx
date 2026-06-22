@@ -19,6 +19,7 @@ import {
   beatsToNumber,
   buildTimeline,
   hasAnyBeats,
+  lyricPackets,
   lyricSegments,
   quarterBeatsPerBar,
   type TimelineItem,
@@ -137,6 +138,9 @@ function HorizontalView({
     () => buildTimeline(song, defaults, difficultyId),
     [song, defaults, difficultyId],
   );
+  // `packets` are the run-on text shown beneath chords (across line breaks);
+  // `segments` are the per-line editable slices the inline lyric editor rewrites.
+  const packets = useMemo(() => lyricPackets(timeline), [timeline]);
   const segments = useMemo(() => lyricSegments(timeline.items), [timeline.items]);
   const timed = useMemo(() => hasAnyBeats(song, difficultyId), [song, difficultyId]);
 
@@ -165,7 +169,7 @@ function HorizontalView({
     const gap = 6;
     const rowRight = new Array(LYRIC_ROWS).fill(-Infinity);
     for (const item of timeline.items) {
-      const text = segments.get(item.event.id);
+      const text = packets.get(item.event.id);
       if (!text) continue;
       const left = item.absBeat * pxPerBeat;
       const wpx = text.length * charW + 8;
@@ -175,7 +179,7 @@ function HorizontalView({
       map.set(item.event.id, row);
     }
     return map;
-  }, [timeline.items, segments, pxPerBeat, fontScale]);
+  }, [timeline.items, packets, pxPerBeat, fontScale]);
 
   // Stable handles for the rAF loop so it doesn't restart on every tick.
   const transportRef = useRef(transport);
@@ -724,7 +728,13 @@ function HorizontalView({
                 // A placeholder onset (no chord, or a bare ".") isn't a real
                 // chord — render it muted so it reads as a faint timing dot.
                 const marker = !item.event.chord || item.event.chord === '.';
-                const lyric = segments.get(item.event.id);
+                // Add-chord mode maps per-character clicks to a charIndex within
+                // the event's own line, so it must use the per-line `segments`;
+                // normal display shows the run-on `packets` (across line breaks).
+                const lyric =
+                  editMode && addKind === 'chord'
+                    ? segments.get(item.event.id)
+                    : packets.get(item.event.id);
                 const active = item.id === currentId;
                 const selected = editMode && item.id === selectedId;
                 const row = lyricRows.get(item.event.id) ?? 0;
