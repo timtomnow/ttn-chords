@@ -33,7 +33,8 @@ live under the same domain and back up the same way.
 | Styling        | Tailwind, mobile-first, `darkMode:class`| One responsive layout; light/dark from day one. |
 | Theming        | CSS-variable **accent** token           | User-selectable accent (Settings); `accent` + `accent.fg` re-theme the app. See `src/lib/accent.ts`. |
 | Routing        | react-router-dom v6                      | `BASE_URL` basename for GitHub Pages. |
-| Persistence    | Dexie (IndexedDB)                        | Reactive reads via `dexie-react-hooks`. |
+| Backend/auth   | **Supabase** (`@supabase/supabase-js`)  | Cloud refactor (post-Phase-14): Supabase is the single source of truth for all data — Postgres + Row-Level Security + Auth + Edge Functions. Browser uses the ANON key only; privileged writes run in Edge Functions with the service-role key (Edge-secret-only). Two projects (dev/prod) via `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. See `ttn-chords-supabase-schema.md` for the data model + RLS. |
+| Persistence    | Dexie (IndexedDB)                        | Reactive reads via `dexie-react-hooks`. **Demoted to an optional local cache** by the Supabase refactor — all writes go to the cloud; no two-way sync. |
 | Reorder/DnD    | @dnd-kit                                 | Sections, setlist entries, report blocks. |
 | PWA            | vite-plugin-pwa (`autoUpdate`)          | Installable, offline. |
 | Backup         | ttn-backup adapter + JSON export/import | `appId: 'ttn-chords'`. |

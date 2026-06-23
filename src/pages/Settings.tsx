@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { BookOpen, Check, ChevronRight, Download, Upload, RotateCcw } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { useAuth } from '@/auth/AuthProvider';
 import { useTheme, type ThemePref } from '@/app/theme';
 import { saveSettings, useSettings } from '@/db/repo';
 import { ACCENT_PRESETS, applyAccent } from '@/lib/accent';
@@ -25,6 +26,7 @@ const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
 
 export function Settings() {
   const { pref, setPref } = useTheme();
+  const { user, profile, isAdmin, signOut } = useAuth();
   const settings = useSettings();
   const adminMode = settings?.adminMode ?? false;
 
@@ -48,6 +50,33 @@ export function Settings() {
   return (
     <div className="space-y-8">
       <PageHeader title="Settings" />
+
+      {/* Account */}
+      <section className="space-y-3">
+        <h2 className="label">Account</h2>
+        <div className="card flex items-center justify-between gap-4 px-4 py-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <span className="truncate">
+                {profile?.display_name || user?.email || 'Signed in'}
+              </span>
+              {isAdmin && (
+                <span className="rounded bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-fg">
+                  Admin
+                </span>
+              )}
+            </div>
+            {profile?.display_name && user?.email && (
+              <p className="mt-0.5 truncate text-xs text-ink-500 dark:text-ink-400">
+                {user.email}
+              </p>
+            )}
+          </div>
+          <button className="btn-secondary shrink-0" onClick={() => void signOut()}>
+            Sign out
+          </button>
+        </div>
+      </section>
 
       {/* Appearance */}
       <section className="space-y-3">
