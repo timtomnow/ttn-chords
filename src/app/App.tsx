@@ -9,6 +9,9 @@ import { Tools } from '@/pages/Tools';
 import { Settings } from '@/pages/Settings';
 import { GuidePage, HelpAll, HelpIndex, HelpSectionPage } from '@/pages/Help';
 import { Auth } from '@/pages/Auth';
+import { StoreLayout } from '@/pages/store/StoreLayout';
+import { Storefront } from '@/pages/store/Storefront';
+import { BundleDetail } from '@/pages/store/BundleDetail';
 import { ThemeProvider } from './theme';
 import { AuthProvider } from '@/auth/AuthProvider';
 import { RequireAuth } from '@/auth/RequireAuth';
@@ -16,11 +19,14 @@ import { SupabaseConfigGate } from '@/auth/SupabaseConfigGate';
 import { PwaUpdater } from '@/components/PwaUpdater';
 import { installTtnBackupAdapter } from '@/lib/ttnBackup';
 import { getSettings } from '@/db/repo';
+import { initCloudSync } from '@/db/cloud';
 import { applyAccent } from '@/lib/accent';
 
 export function App() {
   useEffect(() => {
     installTtnBackupAdapter();
+    // Keep the cloud caches in sync with the signed-in user (login/logout).
+    initCloudSync();
     // Apply the saved accent from the DB (source of truth for backups). The
     // inline script in index.html already applied the localStorage mirror, so
     // this only matters after a restore or on a fresh device.
@@ -35,6 +41,12 @@ export function App() {
           <Routes>
             {/* Public auth screen — no shell, no session required. */}
             <Route path="/auth" element={<Auth />} />
+            {/* Public storefront — logged-out visitors can browse active bundles
+                (and nothing else). Song bodies stay gated by entitlement. */}
+            <Route element={<StoreLayout />}>
+              <Route path="/store" element={<Storefront />} />
+              <Route path="/store/:id" element={<BundleDetail />} />
+            </Route>
             {/* Everything else requires a session. */}
             <Route element={<RequireAuth />}>
               {/* Print view lives outside the shell (more specific than

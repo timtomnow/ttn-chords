@@ -4,6 +4,18 @@
 IndexedDB, if used at all, is only a local cache. Frontend hosted on GitHub Pages
 (public repo, free tier). Payments via Square.
 
+> **Refinements applied during the build** (search `REFINED` below):
+> 1. **songs** — a song is EITHER personal (`owner_id`) OR paid bundle content
+>    (`bundle_id`); both nullable with an owner-or-bundle check. Read policy gains
+>    an `owner_id` branch; owners may write their own songs.
+> 2. **setlists** — stored as a JSON aggregate (the full app `Setlist` incl.
+>    `entries[]` lives in `content`); the `setlist_songs` join table was dropped,
+>    since the app never queries setlist contents relationally.
+>
+> The phase-by-phase SQL actually run lives in `supabase/migrations/`. In Phase 2
+> the songs read policy omits the bundle/entitlement branch (no bundles yet);
+> Phase 3 replaces it with the full policy shown here and adds the `bundle_id` FK.
+
 ---
 
 ## The two principles that make this safe
@@ -29,6 +41,12 @@ deploy's secret settings.
 ---
 
 ## Helper functions & signup wiring
+
+> **Ordering note:** `is_admin()` is a `language sql` function whose body is
+> validated when it's created, and it references `public.profiles`. So the
+> `profiles` table must exist **before** `is_admin()` runs. The phase migrations
+> in `supabase/migrations/` already order it correctly (profiles table first);
+> if you run snippets from this doc by hand, create `profiles` before `is_admin()`.
 
 ```sql
 -- Admin check that safely bypasses RLS (SECURITY DEFINER) to avoid recursion.
@@ -112,13 +130,19 @@ create table public.bundles (
   created_at      timestamptz not null default now()
 );
 
--- 3. SONGS — your paid content (chords/lyrics/rhythm)
+-- 3. SONGS — chords/lyrics/rhythm. A song is EITHER personal (owner_id) OR paid
+--    bundle content (bundle_id). The full app Song aggregate lives in `content`;
+--    `title` is mirrored for listing. (REFINED from the original brief: added
+--    owner_id, made bundle_id nullable, added the owner-or-bundle check.)
+--    The app supplies `id` (so in-content references stay valid) — no default.
 create table public.songs (
-  id         uuid primary key default gen_random_uuid(),
-  bundle_id  uuid not null references public.bundles(id) on delete cascade,
+  id         uuid primary key,
+  owner_id   uuid references public.profiles(id) on delete cascade,
+  bundle_id  uuid references public.bundles(id) on delete cascade,
   title      text not null,
   content    jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint songs_owner_or_bundle check (owner_id is not null or bundle_id is not null)
 );
 
 -- 4. ENTITLEMENTS — the heart: who owns which bundle. One row = one grant.
@@ -151,22 +175,22 @@ create table public.purchases (
   created_at        timestamptz not null default now()
 );
 
--- 7. SETLISTS — user-authored groupings (their own content)
+-- 7. SETLISTS — user-authored groupings (their own content).
+--    JSON-aggregate model (REFINED): the app treats a setlist as one object with
+--    rich per-performance entry overrides (difficultyId/transpose/capo/notes) and
+--    never queries its contents relationally, so the whole Setlist (incl.
+--    entries[]) is stored in `content`. name/description mirrored to columns.
+--    There is intentionally NO setlist_songs join table.
 create table public.setlists (
-  id         uuid primary key default gen_random_uuid(),
-  user_id    uuid not null references public.profiles(id) on delete cascade,
-  title      text not null,
-  created_at timestamptz not null default now()
+  id          uuid primary key,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  title       text not null,
+  description text,
+  content     jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
 );
 
--- 8. SETLIST_SONGS — ordered songs within a setlist
-create table public.setlist_songs (
-  id         uuid primary key default gen_random_uuid(),
-  setlist_id uuid not null references public.setlists(id) on delete cascade,
-  song_id    uuid not null references public.songs(id) on delete cascade,
-  position   integer not null default 0,
-  unique (setlist_id, song_id)
-);
+-- (8. SETLIST_SONGS removed — entries live inside setlists.content; see above.)
 
 -- 9. SONG_NOTES — users' own comments/notes layered on top of songs
 --    Private by default; set is_public = true to share a note with others.
@@ -193,7 +217,6 @@ alter table public.entitlements  enable row level security;
 alter table public.access_codes  enable row level security;
 alter table public.purchases     enable row level security;
 alter table public.setlists      enable row level security;
-alter table public.setlist_songs enable row level security;
 alter table public.song_notes    enable row level security;
 ```
 
@@ -217,16 +240,20 @@ create policy bundles_select on public.bundles
 create policy bundles_admin_write on public.bundles
   for all using (public.is_admin()) with check (public.is_admin());
 
--- SONGS: readable ONLY if you have an entitlement to its bundle. Admins all.
--- This is the paid-content gate.
-create policy songs_select_entitled on public.songs
+-- SONGS: readable if you OWN it (personal), OR you're entitled to its bundle
+-- (paid content), OR admin. Personal songs you may write; admins write bundle
+-- content. (REFINED to add the owner_id branches.)
+create policy songs_select on public.songs
   for select using (
-    public.is_admin()
+    owner_id = auth.uid()
+    or public.is_admin()
     or exists (
       select 1 from public.entitlements e
       where e.user_id = auth.uid() and e.bundle_id = songs.bundle_id
     )
   );
+create policy songs_owner_write on public.songs
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 create policy songs_admin_write on public.songs
   for all using (public.is_admin()) with check (public.is_admin());
 
@@ -248,23 +275,11 @@ create policy purchases_select on public.purchases
 create policy purchases_admin_write on public.purchases
   for all using (public.is_admin()) with check (public.is_admin());
 
--- SETLISTS: full control over your own rows.
+-- SETLISTS: full control over your own rows. (Entries live in content; no
+-- separate setlist_songs table.)
 create policy setlists_own on public.setlists
   for all using (user_id = auth.uid() or public.is_admin())
   with check (user_id = auth.uid() or public.is_admin());
-
--- SETLIST_SONGS: access gated by ownership of the parent setlist.
-create policy setlist_songs_own on public.setlist_songs
-  for all using (
-    exists (select 1 from public.setlists s
-            where s.id = setlist_songs.setlist_id
-              and (s.user_id = auth.uid() or public.is_admin()))
-  )
-  with check (
-    exists (select 1 from public.setlists s
-            where s.id = setlist_songs.setlist_id
-              and (s.user_id = auth.uid() or public.is_admin()))
-  );
 
 -- SONG_NOTES: read your own + any note flagged public; write only your own.
 create policy song_notes_select on public.song_notes
@@ -293,6 +308,19 @@ with check (
 ```
 
 ---
+
+## Storefront read helpers (SECURITY DEFINER RPCs)
+
+So logged-out / non-entitled visitors can see a useful catalogue without the
+gated song bodies leaking, the storefront reads go through two SECURITY DEFINER
+functions (added in the Phase 3 migration):
+
+- `storefront_bundles()` → active bundles + a `song_count` each.
+- `bundle_song_titles(bundle_id)` → song **titles only** for an active bundle.
+
+Both bypass RLS deliberately, but expose only non-sensitive fields (counts,
+titles). The full `songs.content` is never returned by them — that still requires
+an entitlement via the `songs_select` policy.
 
 ## How the three access paths use this model
 

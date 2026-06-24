@@ -1,7 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, MoveHorizontal, Minus, Pencil, Play, Plus } from 'lucide-react';
-import { useAdminMode, useRhythmPatternsByIds, useRhythmSymbolMap, useSong } from '@/db/repo';
+import {
+  useAdminMode,
+  useIsOwnedSong,
+  useRhythmPatternsByIds,
+  useRhythmSymbolMap,
+  useSong,
+} from '@/db/repo';
 import { ChordLine } from '@/components/chords/ChordLine';
 import { ChordChart } from '@/components/chords/ChordChart';
 import { ChordPopover } from '@/components/chords/ChordPopover';
@@ -10,6 +16,7 @@ import { RhythmChart } from '@/components/rhythm/RhythmChart';
 import { defaultLabelForKind } from '@/lib/chordpro';
 import { preferFlatsForKey, transposeChordSymbol } from '@/lib/music';
 import { sectionsOf, sortedDifficulties, uniqueChords } from '@/lib/song';
+import { SongNotes } from './SongNotes';
 import type { Song } from '@/types';
 
 export function SongView() {
@@ -34,6 +41,9 @@ export function SongView() {
 function View({ song }: { song: Song }) {
   const navigate = useNavigate();
   const admin = useAdminMode();
+  // Bundle (paid) songs aren't the user's to edit — only personal songs are.
+  const owned = useIsOwnedSong(song.id);
+  const canEdit = admin && owned;
   const [transpose, setTranspose] = useState(0);
   const difficulties = sortedDifficulties(song);
   const [diffId, setDiffId] = useState(song.defaultDifficultyId);
@@ -67,7 +77,7 @@ function View({ song }: { song: Song }) {
           <ArrowLeft size={16} /> Songs
         </button>
         <div className="flex gap-2">
-          {admin && (
+          {canEdit && (
             <>
               <button className="btn-secondary" onClick={() => navigate('edit')}>
                 <Pencil size={15} /> Edit
@@ -195,6 +205,8 @@ function View({ song }: { song: Song }) {
           );
         })}
       </div>
+
+      <SongNotes songId={song.id} />
 
       {popover && (
         <ChordPopover

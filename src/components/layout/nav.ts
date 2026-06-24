@@ -1,4 +1,12 @@
-import { Music, ListMusic, FileText, Wrench, Settings, type LucideIcon } from 'lucide-react';
+import {
+  Music,
+  ListMusic,
+  FileText,
+  Wrench,
+  Store,
+  Settings,
+  type LucideIcon,
+} from 'lucide-react';
 
 export type NavEntry = { to: string; label: string; icon: LucideIcon };
 
@@ -8,5 +16,6 @@ export const NAV: NavEntry[] = [
   { to: '/setlists', label: 'Setlists', icon: ListMusic },
   { to: '/reports', label: 'Reports', icon: FileText },
   { to: '/tools', label: 'Tools', icon: Wrench },
+  { to: '/store', label: 'Store', icon: Store },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];

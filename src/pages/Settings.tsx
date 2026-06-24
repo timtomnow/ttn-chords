@@ -13,6 +13,9 @@ import {
   parseExportPayload,
 } from '@/db/exportImport';
 import { openTtnBackupRestore } from '@/lib/ttnBackup';
+import { importLocalData } from '@/db/repo';
+import { CloudUpload } from 'lucide-react';
+import { useState } from 'react';
 import { InstrumentSettings } from './settings/InstrumentSettings';
 import { RhythmSettings } from './settings/RhythmSettings';
 import { RhythmSymbolSettings } from './settings/RhythmSymbolSettings';
@@ -45,6 +48,26 @@ export function Settings() {
     const payload = parseExportPayload(JSON.parse(text));
     await importData(payload, 'replace');
     location.reload();
+  }
+
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  async function doImportLocal() {
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const r = await importLocalData();
+      setImportMsg(
+        r.songs === 0 && r.setlists === 0
+          ? `Nothing new to import${r.skipped ? ` (${r.skipped} already in the cloud)` : ''}.`
+          : `Imported ${r.songs} song(s) and ${r.setlists} setlist(s)` +
+              (r.skipped ? `, skipped ${r.skipped} already present.` : '.'),
+      );
+    } catch (err) {
+      setImportMsg(`Import failed: ${String(err)}`);
+    } finally {
+      setImporting(false);
+    }
   }
 
   return (
@@ -178,6 +201,24 @@ export function Settings() {
           <RhythmSettings />
         </>
       )}
+
+      {/* Cloud — one-time migration of pre-cloud local data */}
+      <section className="space-y-3">
+        <h2 className="label">Cloud data</h2>
+        <div className="card space-y-3 p-4">
+          <p className="text-xs text-ink-500 dark:text-ink-400">
+            Your songs and setlists now live in your account in the cloud. If you used this
+            app before signing in, import that older local data into your account. It's safe
+            to run more than once — anything already in the cloud is skipped.
+          </p>
+          <button className="btn-secondary" onClick={doImportLocal} disabled={importing}>
+            <CloudUpload size={16} /> {importing ? 'Importing…' : 'Import my local data'}
+          </button>
+          {importMsg && (
+            <p className="text-xs text-ink-600 dark:text-ink-300">{importMsg}</p>
+          )}
+        </div>
+      </section>
 
       {/* Backup */}
       <section className="space-y-3">

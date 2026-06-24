@@ -1,12 +1,16 @@
-// Typed CRUD + reactive hooks. Components import from HERE, never call Dexie
-// directly. Reads use useLiveQuery so the UI updates automatically on writes.
+// Typed CRUD + reactive hooks. Components import from HERE.
+//
+// LOCAL (Dexie) data — instruments, chord defs, rhythms, report templates,
+// photos, settings — lives below and uses useLiveQuery.
+//
+// USER CONTENT — songs, setlists, song notes, and starter-library/local import —
+// moved to the Supabase-backed cloud layer (src/db/cloud) as part of the cloud
+// refactor. They're re-exported here so existing imports from '@/db/repo' keep
+// working unchanged.
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './schema';
 import { newId } from '@/lib/id';
-import { makeDifficulty } from '@/lib/song';
-import { matchKey, nextDuplicateTitle, type ConflictResolution } from '@/lib/library/import';
-import type { SongBundle } from '@/lib/library/types';
 import type {
   AppSettings,
   ChordDefinition,
@@ -15,228 +19,36 @@ import type {
   ReportTemplate,
   RhythmPattern,
   RhythmSymbol,
-  Section,
-  Setlist,
-  Song,
 } from '@/types';
 
 const now = () => Date.now();
 
-// ───────── Songs ─────────
-
-export function useSongs(): Song[] | undefined {
-  return useLiveQuery(() => db.songs.orderBy('order').toArray());
-}
-
-// Returns undefined while the query is in flight, null when the id resolves to
-// no row (so the editor can tell "loading" apart from "not found").
-export function useSong(id: string | undefined): Song | null | undefined {
-  return useLiveQuery(
-    async () => (id ? ((await db.songs.get(id)) ?? null) : null),
-    [id],
-  );
-}
-
-/** Look up many songs by id, returned as a Map for O(1) access. */
-export function useSongsByIds(ids: string[]): Map<string, Song> | undefined {
-  const key = ids.join(',');
-  return useLiveQuery(async () => {
-    const rows = await db.songs.bulkGet(ids);
-    const map = new Map<string, Song>();
-    rows.forEach((r) => {
-      if (r) map.set(r.id, r);
-    });
-    return map;
-  }, [key]);
-}
-
-export async function createSong(
-  // `sections` is a convenience for callers that build a single arrangement
-  // (e.g. ChordPro import) — it's wrapped into one default difficulty variant.
-  data: Partial<Song> & Pick<Song, 'title'> & { sections?: Section[] },
-): Promise<string> {
-  const id = newId();
-  const max = await db.songs.orderBy('order').last();
-  const difficulties = data.difficulties?.length
-    ? data.difficulties
-    : [makeDifficulty(3, data.sections ?? [])];
-  const song: Song = {
-    id,
-    title: data.title,
-    artist: data.artist,
-    key: data.key,
-    capo: data.capo,
-    tempo: data.tempo,
-    timeSignature: data.timeSignature,
-    tags: data.tags ?? [],
-    difficulties,
-    defaultDifficultyId: data.defaultDifficultyId ?? difficulties[0].id,
-    source: data.source,
-    sourceUrl: data.sourceUrl,
-    notes: data.notes,
-    order: (max?.order ?? 0) + 1,
-    createdAt: now(),
-    updatedAt: now(),
-  };
-  await db.songs.add(song);
-  return id;
-}
-
-export async function updateSong(id: string, patch: Partial<Song>): Promise<void> {
-  await db.songs.update(id, { ...patch, updatedAt: now() });
-}
-
-/**
- * Replace the sections of one difficulty variant (used by beat editing in the
- * Highway view + Tag beats). Falls back to the default/first variant when
- * `difficultyId` is omitted or no longer matches.
- */
-export async function updateDifficultySections(
-  songId: string,
-  difficultyId: string | undefined,
-  sections: Section[],
-): Promise<void> {
-  const song = await db.songs.get(songId);
-  if (!song || !song.difficulties.length) return;
-  const targetId =
-    (difficultyId && song.difficulties.some((d) => d.id === difficultyId) && difficultyId) ||
-    (song.defaultDifficultyId &&
-      song.difficulties.some((d) => d.id === song.defaultDifficultyId) &&
-      song.defaultDifficultyId) ||
-    song.difficulties[0].id;
-  const difficulties = song.difficulties.map((d) =>
-    d.id === targetId ? { ...d, sections } : d,
-  );
-  await db.songs.update(songId, { difficulties, updatedAt: now() });
-}
-
-export async function deleteSong(id: string): Promise<void> {
-  await db.songs.delete(id);
-}
-
-// ───────── Setlists ─────────
-
-export function useSetlists(): Setlist[] | undefined {
-  return useLiveQuery(() => db.setlists.orderBy('order').toArray());
-}
-
-export function useSetlist(id: string | undefined): Setlist | undefined {
-  return useLiveQuery(() => (id ? db.setlists.get(id) : undefined), [id]);
-}
-
-export async function createSetlist(
-  data: Partial<Setlist> & Pick<Setlist, 'name'>,
-): Promise<string> {
-  const id = newId();
-  const max = await db.setlists.orderBy('order').last();
-  const setlist: Setlist = {
-    id,
-    name: data.name,
-    description: data.description,
-    entries: data.entries ?? [],
-    order: (max?.order ?? 0) + 1,
-    createdAt: now(),
-    updatedAt: now(),
-  };
-  await db.setlists.add(setlist);
-  return id;
-}
-
-export async function updateSetlist(id: string, patch: Partial<Setlist>): Promise<void> {
-  await db.setlists.update(id, { ...patch, updatedAt: now() });
-}
-
-export async function deleteSetlist(id: string): Promise<void> {
-  await db.setlists.delete(id);
-}
-
-// ───────── Starter library bundles (opt-in sync) ─────────
-
-export type BundleImportSummary = {
-  added: number;
-  overwritten: number;
-  duplicated: number;
-  setlists: number;
-};
-
-/**
- * Sync a bundle into the library. Songs matching an existing title+artist use
- * the per-song resolution (overwrite the existing row, or import as a `_N`
- * duplicate); unmatched songs import as new. Anything the user already has is
- * left untouched unless explicitly overwritten. Bundle setlists are imported
- * with their song references remapped to the resulting ids. Runs in one
- * transaction. A conflict with no explicit resolution defaults to a (safe)
- * duplicate.
- */
-export async function importBundle(
-  bundle: SongBundle,
-  resolutions: Record<string, ConflictResolution>,
-): Promise<BundleImportSummary> {
-  const summary: BundleImportSummary = { added: 0, overwritten: 0, duplicated: 0, setlists: 0 };
-
-  await db.transaction('rw', db.songs, db.setlists, async () => {
-    const existing = await db.songs.toArray();
-    const byKey = new Map<string, Song>();
-    for (const s of existing) {
-      const k = matchKey(s.title, s.artist);
-      if (!byKey.has(k)) byKey.set(k, s);
-    }
-    const titles = new Set(existing.map((s) => s.title));
-    let maxOrder = existing.reduce((m, s) => Math.max(m, s.order), 0);
-    const idMap = new Map<string, string>();
-
-    for (const bs of bundle.songs) {
-      const match = byKey.get(matchKey(bs.title, bs.artist));
-      if (match && resolutions[bs.id] === 'overwrite') {
-        await db.songs.put({
-          ...bs,
-          id: match.id,
-          order: match.order,
-          createdAt: match.createdAt,
-          updatedAt: now(),
-        });
-        idMap.set(bs.id, match.id);
-        summary.overwritten += 1;
-      } else {
-        const id = newId();
-        const isDuplicate = Boolean(match);
-        const title = isDuplicate ? nextDuplicateTitle(bs.title, titles) : bs.title;
-        titles.add(title);
-        await db.songs.add({
-          ...bs,
-          id,
-          title,
-          order: ++maxOrder,
-          createdAt: now(),
-          updatedAt: now(),
-        });
-        idMap.set(bs.id, id);
-        if (isDuplicate) summary.duplicated += 1;
-        else summary.added += 1;
-      }
-    }
-
-    if (bundle.setlists?.length) {
-      let maxSlOrder = (await db.setlists.orderBy('order').last())?.order ?? 0;
-      for (const sl of bundle.setlists) {
-        const entries = sl.entries
-          .map((e) => ({ ...e, songId: idMap.get(e.songId) ?? '' }))
-          .filter((e) => e.songId);
-        await db.setlists.add({
-          ...sl,
-          id: newId(),
-          entries,
-          order: ++maxSlOrder,
-          createdAt: now(),
-          updatedAt: now(),
-        });
-        summary.setlists += 1;
-      }
-    }
-  });
-
-  return summary;
-}
+// ───────── Songs / setlists / notes / import (Supabase-backed) ─────────
+export {
+  useSongs,
+  useSong,
+  useSongsByIds,
+  createSong,
+  updateSong,
+  updateDifficultySections,
+  deleteSong,
+  useSetlists,
+  useSetlist,
+  createSetlist,
+  updateSetlist,
+  deleteSetlist,
+  useSongNotes,
+  saveMyNote,
+  deleteNote,
+  useIsOwnedSong,
+  useStorefront,
+  useEntitledBundleIds,
+  useBundle,
+  useBundleSongTitles,
+  importBundle,
+  importLocalData,
+} from './cloud';
+export type { BundleImportSummary, LocalImportSummary, SongNote } from './cloud';
 
 // ───────── Instruments (user-defined; builtins live in src/lib/chords) ─────────
 

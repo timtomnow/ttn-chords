@@ -3,6 +3,17 @@
 -- It is the profiles-related subset of ttn-chords-supabase-schema.md; later
 -- phases add the remaining tables. Safe to re-run (idempotent where practical).
 
+-- ── Profiles: one row per auth user ──
+-- (Created first: is_admin() below is a SQL function whose body is validated at
+--  creation time and references this table.)
+create table if not exists public.profiles (
+  id           uuid primary key references auth.users(id) on delete cascade,
+  email        text,
+  display_name text,
+  role         text not null default 'user' check (role in ('user','admin')),
+  created_at   timestamptz not null default now()
+);
+
 -- ── Helper: admin check (SECURITY DEFINER avoids RLS recursion on profiles) ──
 create or replace function public.is_admin()
 returns boolean
@@ -16,15 +27,6 @@ as $$
     where id = auth.uid() and role = 'admin'
   );
 $$;
-
--- ── Profiles: one row per auth user ──
-create table if not exists public.profiles (
-  id           uuid primary key references auth.users(id) on delete cascade,
-  email        text,
-  display_name text,
-  role         text not null default 'user' check (role in ('user','admin')),
-  created_at   timestamptz not null default now()
-);
 
 -- ── Auto-create a profile row when a new auth user signs up ──
 create or replace function public.handle_new_user()
