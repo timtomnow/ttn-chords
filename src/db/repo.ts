@@ -45,10 +45,21 @@ export {
   useEntitledBundleIds,
   useBundle,
   useBundleSongTitles,
+  redeemCode,
+  useAdminBundles,
+  createBundle,
+  updateBundle,
+  deleteBundle,
+  useAdminBundleSongs,
+  addSongToBundle,
+  removeBundleSong,
+  useAccessCodes,
+  createAccessCodes,
+  grantBundleByEmail,
   importBundle,
   importLocalData,
 } from './cloud';
-export type { BundleImportSummary, LocalImportSummary, SongNote } from './cloud';
+export type { BundleImportSummary, LocalImportSummary, SongNote, BundleInput } from './cloud';
 
 // ───────── Instruments (user-defined; builtins live in src/lib/chords) ─────────
 

@@ -28,6 +28,8 @@ type AuthResult = { error: string | null };
 type AuthContextValue = {
   /** undefined while the initial session is loading. */
   loading: boolean;
+  /** True once the profile row (and thus role) has been resolved for the user. */
+  profileLoaded: boolean;
   session: Session | null;
   user: User | null;
   profile: Profile | null;
@@ -61,6 +63,7 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
 
@@ -93,10 +96,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let active = true;
     if (!userId) {
       setProfile(null);
+      setProfileLoaded(true);
       return;
     }
+    setProfileLoaded(false);
     fetchProfile(userId).then((p) => {
-      if (active) setProfile(p);
+      if (active) {
+        setProfile(p);
+        setProfileLoaded(true);
+      }
     });
     return () => {
       active = false;
@@ -140,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       loading,
+      profileLoaded,
       session,
       user: session?.user ?? null,
       profile,
@@ -149,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signInWithProvider,
       signOut,
     }),
-    [loading, session, profile, signUp, signIn, signInWithProvider, signOut],
+    [loading, profileLoaded, session, profile, signUp, signIn, signInWithProvider, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

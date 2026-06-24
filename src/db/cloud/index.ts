@@ -28,6 +28,20 @@ export {
 } from './bundles';
 export { useSongNotes, saveMyNote, deleteNote, type SongNote } from './notes';
 export {
+  redeemCode,
+  useAdminBundles,
+  createBundle,
+  updateBundle,
+  deleteBundle,
+  useAdminBundleSongs,
+  addSongToBundle,
+  removeBundleSong,
+  useAccessCodes,
+  createAccessCodes,
+  grantBundleByEmail,
+  type BundleInput,
+} from './admin';
+export {
   importBundle,
   importLocalData,
   type BundleImportSummary,

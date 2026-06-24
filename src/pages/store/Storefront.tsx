@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useEntitledBundleIds, useStorefront } from '@/db/repo';
 import { formatPrice } from '@/lib/money';
+import { RedeemCode } from './RedeemCode';
 
 export function Storefront() {
   const bundles = useStorefront();
@@ -16,6 +17,8 @@ export function Storefront() {
   return (
     <div>
       <PageHeader title="Store" subtitle="Song bundles" />
+
+      <RedeemCode />
 
       {bundles === undefined ? (
         <p className="text-sm text-ink-500">Loading…</p>

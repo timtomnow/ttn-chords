@@ -1,7 +1,8 @@
 import { NavLink } from 'react-router-dom';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, ShieldCheck } from 'lucide-react';
 import { Logo } from './Logo';
 import { NAV } from './nav';
+import { useAuth } from '@/auth/AuthProvider';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   [
@@ -12,6 +13,7 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   ].join(' ');
 
 export function Sidebar() {
+  const { isAdmin } = useAuth();
   return (
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900 md:flex md:flex-col">
       <div className="px-6 py-6">
@@ -27,6 +29,14 @@ export function Sidebar() {
               </NavLink>
             </li>
           ))}
+          {isAdmin && (
+            <li>
+              <NavLink to="/admin" className={linkClass}>
+                <ShieldCheck size={18} />
+                Admin
+              </NavLink>
+            </li>
+          )}
           <li>
             <NavLink to="/help" className={linkClass}>
               <HelpCircle size={18} />
@@ -35,9 +45,6 @@ export function Sidebar() {
           </li>
         </ul>
       </nav>
-      <div className="px-6 py-4 text-xs text-ink-400 dark:text-ink-500">
-        Local-first · no backend
-      </div>
     </aside>
   );
 }

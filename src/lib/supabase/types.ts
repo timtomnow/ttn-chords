@@ -168,6 +168,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      access_codes: {
+        Row: {
+          code: string;
+          bundle_id: string;
+          redeemed_by: string | null;
+          redeemed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          code: string;
+          bundle_id: string;
+          redeemed_by?: string | null;
+          redeemed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          redeemed_by?: string | null;
+          redeemed_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -200,6 +221,7 @@ export type Profile = Database['public']['Tables']['profiles']['Row'];
 export type SongNoteRow = Database['public']['Tables']['song_notes']['Row'];
 export type Bundle = Database['public']['Tables']['bundles']['Row'];
 export type Entitlement = Database['public']['Tables']['entitlements']['Row'];
+export type AccessCode = Database['public']['Tables']['access_codes']['Row'];
 export type StorefrontBundle =
   Database['public']['Functions']['storefront_bundles']['Returns'][number];
 export type BundleSongTitle =
