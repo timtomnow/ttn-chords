@@ -108,11 +108,12 @@ $$;
 ```sql
 -- 1. PROFILES — app-level info, one row per auth user
 create table public.profiles (
-  id           uuid primary key references auth.users(id) on delete cascade,
-  email        text,
-  display_name text,
-  role         text not null default 'user' check (role in ('user','admin')),
-  created_at   timestamptz not null default now()
+  id               uuid primary key references auth.users(id) on delete cascade,
+  email            text,
+  display_name     text,
+  role             text not null default 'user' check (role in ('user','admin')),
+  marketing_opt_in boolean not null default false, -- consent capture; no send path yet
+  created_at       timestamptz not null default now()
 );
 
 create trigger profiles_guard_role
@@ -192,6 +193,20 @@ create table public.setlists (
 
 -- (8. SETLIST_SONGS removed — entries live inside setlists.content; see above.)
 
+-- 10. NOTIFICATIONS — in-app inbox. Created only by privileged paths (the
+--     square-webhook + redeem-code Edge Functions via service role, or an admin
+--     grant). Users read their own + mark read/dismiss; never self-insert.
+create table public.notifications (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  type       text not null check (type in ('purchase','code','admin_grant')),
+  title      text not null,
+  body       text,
+  bundle_id  uuid references public.bundles(id) on delete set null,
+  read_at    timestamptz,            -- null = unread
+  created_at timestamptz not null default now()
+);
+
 -- 9. SONG_NOTES — users' own comments/notes layered on top of songs
 --    Private by default; set is_public = true to share a note with others.
 create table public.song_notes (
@@ -216,6 +231,7 @@ alter table public.songs         enable row level security;
 alter table public.entitlements  enable row level security;
 alter table public.access_codes  enable row level security;
 alter table public.purchases     enable row level security;
+alter table public.notifications enable row level security;
 alter table public.setlists      enable row level security;
 alter table public.song_notes    enable row level security;
 ```
@@ -274,6 +290,18 @@ create policy purchases_select on public.purchases
   for select using (user_id = auth.uid() or public.is_admin());
 create policy purchases_admin_write on public.purchases
   for all using (public.is_admin()) with check (public.is_admin());
+
+-- NOTIFICATIONS: read your own; mark your own read; dismiss your own. Inserts
+-- are admin-only (admin grants); Edge Functions use the service role (bypass RLS)
+-- for purchase/code. There is intentionally NO self-insert policy for users.
+create policy notifications_select on public.notifications
+  for select using (user_id = auth.uid() or public.is_admin());
+create policy notifications_update on public.notifications
+  for update using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy notifications_delete on public.notifications
+  for delete using (user_id = auth.uid() or public.is_admin());
+create policy notifications_admin_insert on public.notifications
+  for insert with check (public.is_admin());
 
 -- SETLISTS: full control over your own rows. (Entries live in content; no
 -- separate setlist_songs table.)

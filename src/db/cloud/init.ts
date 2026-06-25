@@ -6,9 +6,16 @@ import { supabase } from '@/lib/supabase/client';
 import { songsList, entitledSongsList } from './songs';
 import { setlistsList } from './setlists';
 import { storefrontList, entitlementsList } from './bundles';
+import { notificationsList } from './notifications';
 
 // Per-user caches: dropped and refetched when the signed-in user changes.
-const userScoped = [songsList, setlistsList, entitledSongsList, entitlementsList];
+const userScoped = [
+  songsList,
+  setlistsList,
+  entitledSongsList,
+  entitlementsList,
+  notificationsList,
+];
 
 let lastUserId: string | null = null;
 let initialized = false;

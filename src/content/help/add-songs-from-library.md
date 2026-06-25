@@ -30,5 +30,4 @@ matches — your edits are never lost unless you overwrite.
 ## Related guides
 
 - [Open and perform a song](/help/perform-a-song)
-- [Back up and restore your data](/help/back-up-and-restore)
 - [Author and export a song bundle (dev only)](/help/author-a-bundle)

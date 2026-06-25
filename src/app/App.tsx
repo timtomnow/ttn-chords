@@ -6,6 +6,7 @@ import { Setlists } from '@/pages/Setlists';
 import { Reports } from '@/pages/Reports';
 import { ReportPrint } from '@/pages/reports/ReportPrint';
 import { Tools } from '@/pages/Tools';
+import { Inbox } from '@/pages/Inbox';
 import { Settings } from '@/pages/Settings';
 import { GuidePage, HelpAll, HelpIndex, HelpSectionPage } from '@/pages/Help';
 import { Auth } from '@/pages/Auth';
@@ -61,6 +62,7 @@ export function App() {
                 <Route path="/tools/*" element={<Tools />} />
                 {/* Admin area — RequireAdmin guard lives inside Admin's routes. */}
                 <Route path="/admin/*" element={<Admin />} />
+                <Route path="/inbox" element={<Inbox />} />
                 <Route path="/settings" element={<Settings />} />
                 {/* Help — static paths before the catch-all :slug so they rank first. */}
                 <Route path="/help" element={<HelpIndex />} />

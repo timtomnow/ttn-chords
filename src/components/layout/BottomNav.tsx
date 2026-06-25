@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { NAV } from './nav';
+import { InboxBadge } from './InboxBadge';
 
 export function BottomNav() {
   return (
@@ -17,13 +18,14 @@ export function BottomNav() {
             to={to}
             className={({ isActive }) =>
               [
-                'flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition',
+                'relative flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition',
                 isActive ? 'text-accent' : 'text-ink-400 dark:text-ink-500',
               ].join(' ')
             }
           >
             <Icon size={20} />
             {label}
+            {to === '/inbox' && <InboxBadge variant="bottom" />}
           </NavLink>
         ))}
       </div>

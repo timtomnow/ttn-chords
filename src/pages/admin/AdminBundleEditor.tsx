@@ -46,6 +46,7 @@ export function AdminBundleEditor() {
 
   const [addSongId, setAddSongId] = useState('');
   const [codeCount, setCodeCount] = useState('5');
+  const [codeError, setCodeError] = useState<string | null>(null);
   const [grantEmail, setGrantEmail] = useState('');
   const [grantMsg, setGrantMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -89,9 +90,14 @@ export function AdminBundleEditor() {
   }
 
   async function genCodes() {
+    setCodeError(null);
     const n = Math.min(100, Math.max(1, parseInt(codeCount, 10) || 0));
-    await createAccessCodes(bundle!.id, n);
-    await reloadCodes();
+    try {
+      await createAccessCodes(bundle!.id, n);
+      await reloadCodes();
+    } catch (err) {
+      setCodeError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function grant() {
@@ -244,6 +250,7 @@ export function AdminBundleEditor() {
             <Plus size={15} /> Generate codes
           </button>
         </div>
+        {codeError && <p className="text-sm text-rose-600 dark:text-rose-400">{codeError}</p>}
         <div className="card divide-y divide-ink-200 dark:divide-ink-800">
           {codes === undefined ? (
             <p className="px-4 py-3 text-sm text-ink-500">Loading…</p>

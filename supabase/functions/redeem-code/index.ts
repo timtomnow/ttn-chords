@@ -88,13 +88,36 @@ Deno.serve(async (req) => {
   }
 
   // 2. Grant the entitlement (idempotent on the unique (user_id, bundle_id)).
-  const { error: grantErr } = await admin
+  //    select() returns a row only when a NEW grant happened, so we only drop an
+  //    inbox notification on a genuinely fresh redemption (not a re-redeem).
+  const { data: grantedRows, error: grantErr } = await admin
     .from('entitlements')
     .upsert(
       { user_id: user.id, bundle_id: claimed.bundle_id, source: 'code' },
       { onConflict: 'user_id,bundle_id', ignoreDuplicates: true },
-    );
+    )
+    .select('id');
   if (grantErr) return json({ error: 'Could not grant access' }, 500);
+
+  // 3. In-app notification for the inbox (best-effort; never fail the redeem).
+  if (grantedRows && grantedRows.length > 0) {
+    const { data: bundle } = await admin
+      .from('bundles')
+      .select('title')
+      .eq('id', claimed.bundle_id)
+      .maybeSingle();
+    const title = bundle?.title as string | undefined;
+    const { error: notifyErr } = await admin.from('notifications').insert({
+      user_id: user.id,
+      type: 'code',
+      title: 'Access code redeemed',
+      body: title
+        ? `“${title}” is now in your library.`
+        : 'A new bundle is now in your library.',
+      bundle_id: claimed.bundle_id,
+    });
+    if (notifyErr) console.error('[redeem-code] notification insert failed', notifyErr.message);
+  }
 
   return json({ ok: true, bundle_id: claimed.bundle_id });
 });

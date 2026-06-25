@@ -13,6 +13,7 @@ import type { Song } from '@/types';
 import { CloudList, useCloudList } from './reactive';
 import { entitledSongsList } from './songs';
 import { entitlementsList, storefrontList } from './bundles';
+import { createNotification, notificationsList } from './notifications';
 
 // ── Redeem an access code (user-facing) ─────────────────────────────────────
 export async function redeemCode(code: string): Promise<{ bundleId: string }> {
@@ -33,11 +34,13 @@ export async function redeemCode(code: string): Promise<{ bundleId: string }> {
     }
     throw new Error(message);
   }
-  // Newly entitled — refresh the gated caches so the unlock shows immediately.
+  // Newly entitled — refresh the gated caches so the unlock shows immediately,
+  // plus the inbox so the redemption notification appears.
   await Promise.all([
     entitlementsList.refresh(),
     entitledSongsList.refresh(),
     storefrontList.refresh(),
+    notificationsList.refresh(),
   ]);
   return { bundleId: (data as { bundle_id: string }).bundle_id };
 }
@@ -199,7 +202,9 @@ export function useAccessCodes(bundleId: string | undefined): {
 }
 
 // ── Admin: direct grant ─────────────────────────────────────────────────────
-/** Grant a bundle to a user by email (source = 'admin_grant'). */
+/** Grant a bundle to a user by email (source = 'admin_grant'). On a fresh grant
+ *  (not a re-grant of something they already own) also drop a notification in
+ *  the user's inbox. */
 export async function grantBundleByEmail(email: string, bundleId: string): Promise<void> {
   const { data: profile, error: lookupErr } = await supabase
     .from('profiles')
@@ -208,9 +213,24 @@ export async function grantBundleByEmail(email: string, bundleId: string): Promi
     .maybeSingle();
   if (lookupErr) throw lookupErr;
   if (!profile) throw new Error('No user found with that email');
-  const { error } = await supabase.from('entitlements').upsert(
-    { user_id: profile.id, bundle_id: bundleId, source: 'admin_grant' },
-    { onConflict: 'user_id,bundle_id', ignoreDuplicates: true },
-  );
+  // ignoreDuplicates + select: a row comes back only when a NEW grant was made,
+  // so we don't re-notify on a repeat grant.
+  const { data: granted, error } = await supabase
+    .from('entitlements')
+    .upsert(
+      { user_id: profile.id, bundle_id: bundleId, source: 'admin_grant' },
+      { onConflict: 'user_id,bundle_id', ignoreDuplicates: true },
+    )
+    .select('id');
   if (error) throw error;
+  if (granted && granted.length > 0) {
+    const title = adminBundlesList.getSnapshot()?.find((b) => b.id === bundleId)?.title;
+    await createNotification({
+      userId: profile.id,
+      type: 'admin_grant',
+      title: 'A bundle was added to your account',
+      body: title ? `“${title}” is now in your library.` : 'A new bundle is now in your library.',
+      bundleId,
+    });
+  }
 }

@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { HelpCircle, ShieldCheck } from 'lucide-react';
 import { Logo } from './Logo';
 import { NAV } from './nav';
+import { InboxBadge } from './InboxBadge';
 import { useAuth } from '@/auth/AuthProvider';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -26,6 +27,7 @@ export function Sidebar() {
               <NavLink to={to} className={linkClass}>
                 <Icon size={18} />
                 {label}
+                {to === '/inbox' && <InboxBadge variant="sidebar" />}
               </NavLink>
             </li>
           ))}

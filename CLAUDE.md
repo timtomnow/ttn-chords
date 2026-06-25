@@ -2,6 +2,12 @@
 
 Notes for future Claude (or human) sessions working on this project.
 
+> 🚧 **Cloud refactor in progress.** The app is mid-migration from local-first to
+> a Supabase backend. **Phases 1–4 are done** (auth, user data, commerce read
+> side, admin + access codes). The next step is **Phase 5 (Square payments)** then
+> production launch — see **[RESUME-HERE.md](RESUME-HERE.md)** for the status,
+> the Phase 5 prompt, and the deployment steps. Read it before doing backend work.
+
 ## What this is
 **TTN Chords** — a local-first PWA for a music teacher running **group
 song-playing**. Author songs (lyrics + chords + rhythms), show clickable chord

@@ -28,6 +28,14 @@ export {
 } from './bundles';
 export { useSongNotes, saveMyNote, deleteNote, type SongNote } from './notes';
 export {
+  useNotifications,
+  useUnreadNotificationCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  deleteNotification,
+  type AppNotification,
+} from './notifications';
+export {
   redeemCode,
   useAdminBundles,
   createBundle,

@@ -40,6 +40,11 @@ export {
   useSongNotes,
   saveMyNote,
   deleteNote,
+  useNotifications,
+  useUnreadNotificationCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+  deleteNotification,
   useIsOwnedSong,
   useStorefront,
   useEntitledBundleIds,
@@ -59,7 +64,13 @@ export {
   importBundle,
   importLocalData,
 } from './cloud';
-export type { BundleImportSummary, LocalImportSummary, SongNote, BundleInput } from './cloud';
+export type {
+  BundleImportSummary,
+  LocalImportSummary,
+  SongNote,
+  AppNotification,
+  BundleInput,
+} from './cloud';
 
 // ───────── Instruments (user-defined; builtins live in src/lib/chords) ─────────
 

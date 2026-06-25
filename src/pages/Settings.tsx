@@ -1,20 +1,10 @@
 import { Link } from 'react-router-dom';
-import { BookOpen, Check, ChevronRight, Download, Upload, RotateCcw } from 'lucide-react';
+import { BookOpen, Check, ChevronRight, CloudUpload } from 'lucide-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { useAuth } from '@/auth/AuthProvider';
 import { useTheme, type ThemePref } from '@/app/theme';
-import { saveSettings, useSettings } from '@/db/repo';
+import { saveSettings, useSettings, importLocalData } from '@/db/repo';
 import { ACCENT_PRESETS, applyAccent } from '@/lib/accent';
-import {
-  downloadJson,
-  exportData,
-  exportFilename,
-  importData,
-  parseExportPayload,
-} from '@/db/exportImport';
-import { openTtnBackupRestore } from '@/lib/ttnBackup';
-import { importLocalData } from '@/db/repo';
-import { CloudUpload } from 'lucide-react';
 import { useState } from 'react';
 import { InstrumentSettings } from './settings/InstrumentSettings';
 import { RhythmSettings } from './settings/RhythmSettings';
@@ -36,18 +26,6 @@ export function Settings() {
   async function chooseAccent(hex: string) {
     applyAccent(hex);
     await saveSettings({ accentColor: hex });
-  }
-
-  async function doExport() {
-    const data = await exportData();
-    downloadJson(exportFilename(), data);
-  }
-
-  async function doImport(file: File) {
-    const text = await file.text();
-    const payload = parseExportPayload(JSON.parse(text));
-    await importData(payload, 'replace');
-    location.reload();
   }
 
   const [importing, setImporting] = useState(false);
@@ -217,46 +195,6 @@ export function Settings() {
           {importMsg && (
             <p className="text-xs text-ink-600 dark:text-ink-300">{importMsg}</p>
           )}
-        </div>
-      </section>
-
-      {/* Backup */}
-      <section className="space-y-3">
-        <h2 className="label">Backup & data</h2>
-        <div className="card space-y-3 p-4">
-          <div className="flex flex-wrap gap-2">
-            <button className="btn-secondary" onClick={doExport}>
-              <Download size={16} /> Export JSON
-            </button>
-            <label className="btn-secondary cursor-pointer">
-              <Upload size={16} /> Import JSON (replace)
-              <input
-                type="file"
-                accept="application/json"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void doImport(f);
-                }}
-              />
-            </label>
-          </div>
-          <button
-            className="btn-ghost"
-            onClick={() => {
-              try {
-                openTtnBackupRestore();
-              } catch (err) {
-                alert(String(err));
-              }
-            }}
-          >
-            <RotateCcw size={16} /> Restore from ttn-backup
-          </button>
-          <p className="text-xs text-ink-500 dark:text-ink-400">
-            ttn-chords is compatible with the cross-app ttn-backup utility. Import replaces all
-            local data.
-          </p>
         </div>
       </section>
     </div>

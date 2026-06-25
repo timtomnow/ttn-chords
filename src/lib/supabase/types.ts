@@ -24,6 +24,7 @@ export type Database = {
           email: string | null;
           display_name: string | null;
           role: Role;
+          marketing_opt_in: boolean;
           created_at: string;
         };
         // id comes from auth.users; display_name/role default server-side.
@@ -32,6 +33,7 @@ export type Database = {
           email?: string | null;
           display_name?: string | null;
           role?: Role;
+          marketing_opt_in?: boolean;
           created_at?: string;
         };
         Update: {
@@ -39,6 +41,7 @@ export type Database = {
           display_name?: string | null;
           // role changes are guarded server-side (admins only).
           role?: Role;
+          marketing_opt_in?: boolean;
         };
         Relationships: [];
       };
@@ -168,6 +171,34 @@ export type Database = {
         };
         Relationships: [];
       };
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: 'purchase' | 'code' | 'admin_grant';
+          title: string;
+          body: string | null;
+          bundle_id: string | null;
+          read_at: string | null;
+          created_at: string;
+        };
+        // Inserts come from Edge Functions (service role) or an admin grant;
+        // user_id/type/title are always supplied.
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: 'purchase' | 'code' | 'admin_grant';
+          title: string;
+          body?: string | null;
+          bundle_id?: string | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          read_at?: string | null;
+        };
+        Relationships: [];
+      };
       access_codes: {
         Row: {
           code: string;
@@ -218,6 +249,7 @@ export type Database = {
 };
 
 export type Profile = Database['public']['Tables']['profiles']['Row'];
+export type NotificationRow = Database['public']['Tables']['notifications']['Row'];
 export type SongNoteRow = Database['public']['Tables']['song_notes']['Row'];
 export type Bundle = Database['public']['Tables']['bundles']['Row'];
 export type Entitlement = Database['public']['Tables']['entitlements']['Row'];
