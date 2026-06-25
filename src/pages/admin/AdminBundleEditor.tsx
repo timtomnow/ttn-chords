@@ -149,7 +149,7 @@ export function AdminBundleEditor() {
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <label className="label" htmlFor="b-price">Price (USD)</label>
+              <label className="label" htmlFor="b-price">Price (CAD)</label>
               <input
                 id="b-price"
                 className="input"

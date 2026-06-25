@@ -199,6 +199,31 @@ export type Database = {
         };
         Relationships: [];
       };
+      purchases: {
+        Row: {
+          id: string;
+          user_id: string;
+          bundle_id: string;
+          square_payment_id: string | null;
+          amount_cents: number | null;
+          status: string;
+          created_at: string;
+        };
+        // Written only by the square-webhook Edge Function (service role).
+        Insert: {
+          id?: string;
+          user_id: string;
+          bundle_id: string;
+          square_payment_id?: string | null;
+          amount_cents?: number | null;
+          status?: string;
+          created_at?: string;
+        };
+        Update: {
+          status?: string;
+        };
+        Relationships: [];
+      };
       access_codes: {
         Row: {
           code: string;
@@ -253,6 +278,7 @@ export type NotificationRow = Database['public']['Tables']['notifications']['Row
 export type SongNoteRow = Database['public']['Tables']['song_notes']['Row'];
 export type Bundle = Database['public']['Tables']['bundles']['Row'];
 export type Entitlement = Database['public']['Tables']['entitlements']['Row'];
+export type Purchase = Database['public']['Tables']['purchases']['Row'];
 export type AccessCode = Database['public']['Tables']['access_codes']['Row'];
 export type StorefrontBundle =
   Database['public']['Functions']['storefront_bundles']['Returns'][number];

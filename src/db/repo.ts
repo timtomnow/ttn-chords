@@ -51,6 +51,7 @@ export {
   useBundle,
   useBundleSongTitles,
   redeemCode,
+  startCheckout,
   useAdminBundles,
   createBundle,
   updateBundle,

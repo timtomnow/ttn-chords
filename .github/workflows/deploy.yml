@@ -34,8 +34,15 @@ jobs:
         run: npm ci
 
       # Typecheck + lint + test + build (fails the deploy if any step fails).
+      # The Vite build inlines these at build time; without them the deployed
+      # site shows the "Supabase not configured" screen. Set both as GitHub repo
+      # secrets (Settings → Secrets and variables → Actions). Anon/publishable
+      # key only — NEVER the service-role/secret key.
       - name: Check and build
         run: npm run check
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - uses: actions/configure-pages@v5
 

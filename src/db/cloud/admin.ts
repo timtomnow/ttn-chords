@@ -45,6 +45,32 @@ export async function redeemCode(code: string): Promise<{ bundleId: string }> {
   return { bundleId: (data as { bundle_id: string }).bundle_id };
 }
 
+// ── Start a Square checkout (user-facing) ───────────────────────────────────
+/** Ask the create-checkout Edge Function for a per-user Square payment link
+ *  (user + bundle baked into the order metadata) and send the browser there.
+ *  Resolves only if the redirect didn't happen (otherwise navigation occurs). */
+export async function startCheckout(bundleId: string, redirectTo?: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('create-checkout', {
+    body: { bundleId, redirectTo },
+  });
+  if (error) {
+    let message = 'Could not start checkout';
+    try {
+      const ctx = (error as { context?: Response }).context;
+      if (ctx) {
+        const body = await ctx.json();
+        if (body?.error) message = body.error;
+      }
+    } catch {
+      /* fall back to the generic message */
+    }
+    throw new Error(message);
+  }
+  const url = (data as { url?: string }).url;
+  if (!url) throw new Error('Could not start checkout');
+  window.location.href = url;
+}
+
 // ── Admin: bundles ──────────────────────────────────────────────────────────
 async function fetchAdminBundles(): Promise<Bundle[]> {
   // Admins read all bundles (incl. inactive) via RLS.

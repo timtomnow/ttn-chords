@@ -1,17 +1,35 @@
-# ▶️ RESUME HERE — Phase 5 (Square payments) + Production launch
+# ▶️ RESUME HERE — Production launch (Part D)
 
-This is the pick-up point for the ttn-chords cloud refactor. **Phases 1–4 are
-done** (auth, user data, commerce read side, admin + access codes). What's left:
-**Phase 5 = Square payments**, then **going live on the prod project**.
+> ## 🟢 START HERE NEXT: Part D — Production deployment
+> **Phases 1–4 + the inbox (Chunk 1) + Phase 5 Square (Chunk 2, CAD) are all
+> built AND verified working in the dev sandbox** — a real sandbox purchase
+> granted the entitlement, unlocked the songs, and dropped an inbox notification.
+> Everything below Part C is history/reference; **the remaining work is Part D
+> (going live).** Jump there.
+>
+> **First three things to do in the next session (the launch blockers):**
+> 1. **Add the two GitHub repo secrets** `VITE_SUPABASE_URL` /
+>    `VITE_SUPABASE_ANON_KEY` (PROD values). The `deploy.yml` wiring is already
+>    done — but with no secrets, the live site shows "not configured". (Part D §3)
+> 2. **Set up Resend (custom SMTP) + turn Confirm-email ON in prod**, or real
+>    signups can't get confirmation/reset emails. (Part D §5, + "Decisions locked")
+> 3. **Run migrations `0001 → 0006` on the PROD project**, deploy the 3 Edge
+>    Functions to prod, then flip Square to LIVE (live token + location + prod
+>    webhook). (Part D §1, §2, §4)
+>
+> Then re-run **Part C end-to-end against prod** + one small **real-money**
+> purchase before announcing. Also still uncommitted: this session's work (see the
+> proposed commit in chat) — commit it first.
 
-Read this top-to-bottom when you return. It has four parts:
+This is the pick-up point for the ttn-chords cloud refactor.
+
+Read this top-to-bottom when you return. It has these parts:
 
 - **Part 0** — where things stand right now (so you don't repeat work).
-- **Part A** — human setup you do before/while Claude builds Phase 5 (Square).
-- **Part B** — the prompt to paste into Claude Code to build Phase 5.
-- **Part C** — Square testing checklist.
-- **Part D** — full production deployment (run everything against the prod
-  project, wire the deploy, flip Square to live).
+- **Part A** — Square setup + the Phase 5 activation steps (DONE in dev).
+- **Part B** — the (already-executed) Phase 5 build prompt, kept for reference.
+- **Part C** — Square testing checklist (passed in dev; re-run against prod).
+- **Part D** — 🟢 **full production deployment — this is what's left.**
 
 ---
 
@@ -35,15 +53,24 @@ These came out of the "Open Decisions" review. They shape the order below.
 - **Marketing:** no marketing-send path now. Chunk 1 only adds the cheap
   `profiles.marketing_opt_in boolean default false` column (+ a future opt-in
   checkbox) so consent is captured from day one. Account email ≠ consent.
+- **Payment attribution (the fork the Phase 5 brief flagged):** **dynamic
+  per-user checkout.** "Buy" calls a `create-checkout` Edge Function that mints a
+  Square payment link with the buyer's `user_id` + `bundle_id` in the order
+  metadata; the webhook reads them straight back — no buyer-email guessing, no
+  manual reconciliation. Consequence: `bundles.square_link_url` is **unused** by
+  the buy flow (kept in the schema for reference); admins do NOT paste links.
 
 ### Build order set by the above
-- **Chunk 1 (no external setup needed):** `0006_notifications.sql`
-  (`notifications` table + `profiles.marketing_opt_in`), the in-app inbox UI +
-  unread badge, and retiring the export/ttn-backup UI.
-- **Chunk 2 (needs Square sandbox creds):** Phase 5 per Part B — now amended so
-  the webhook also inserts a `notifications` row (purchase + entitlement +
-  notification, all idempotent).
-- **Chunk 3:** production deploy (Part D), migrations `0001 → 0006`.
+- **Chunk 1 — ✅ DONE & verified in dev:** `0006_notifications.sql`
+  (`notifications` + `profiles.marketing_opt_in`), in-app inbox UI + unread badge,
+  export/ttn-backup UI retired. Migration run + `redeem-code` redeployed in dev.
+- **Chunk 2 — ✅ DONE & verified in dev:** Phase 5 Square. `0005_purchases.sql`,
+  `create-checkout` + `square-webhook` Edge Functions, real Buy button, **CAD
+  currency**. A real sandbox purchase granted the entitlement, unlocked songs,
+  and wrote an inbox notification. Idempotent on `square_payment_id`.
+- **Chunk 3 — ⬜ NEXT:** production deploy (Part D), migrations `0001 → 0006`.
+- **Not yet committed:** all of Chunk 1 + Chunk 2 + the CAD switch + the
+  `deploy.yml` env wiring are in the working tree but uncommitted — commit first.
 
 ---
 
@@ -58,7 +85,12 @@ These came out of the "Open Decisions" review. They shape the order below.
 
 **Migrations applied to the DEV project (`ttn-chords-dev`):**
 `0001_profiles_auth.sql`, `0002_user_content.sql`, `0003_commerce.sql`,
-`0004_access_codes.sql` — all in `supabase/migrations/`.
+`0004_access_codes.sql`, `0005_purchases.sql`, `0006_notifications.sql` — all in
+`supabase/migrations/`.
+
+**Edge Functions deployed to DEV:** `redeem-code` (re-deployed with the
+notification write), `create-checkout`, `square-webhook`. Square sandbox secrets
+set; webhook subscribed to `payment.updated`; CAD verified end-to-end.
 
 **Confirmed working in dev:**
 - [x] All four migrations (0001–0004) applied to `ttn-chords-dev`.
@@ -97,22 +129,33 @@ These came out of the "Open Decisions" review. They shape the order below.
   - **Sandbox Access Token**
   - **Application ID**
   - **Location ID** (Sandbox → Locations)
-- [ ] Decide the payment model (tell Claude in the prompt). Default: **Square
-      Payment Links / Checkout** — one hosted payment link per bundle, which you
-      paste into the bundle's "Square payment link" field (already in the admin
-      UI). The webhook confirms payment and grants the entitlement.
+- [x] Payment model decided: **dynamic per-user checkout** (built). You do NOT
+      paste payment links per bundle — the app mints one per click via the
+      `create-checkout` function, with `user_id`+`bundle_id` in the order
+      metadata. You just need the **Location ID** below so the function can build
+      links. (`bundles.square_link_url` in the admin UI is now unused.)
 
-### During the build (when Claude reaches the webhook)
+### Deploy + wire it up (Phase 5 code is built — these are the activation steps)
+- [ ] **Run `0005_purchases.sql`** in the dev SQL editor (and `0006` from Chunk 1
+      if not already). Order between 0005/0006 doesn't matter.
+- [ ] **Deploy two functions** (Dashboard → Edge Functions → Create function →
+      paste the file): `create-checkout` (leave **Verify JWT ON**) and
+      `square-webhook` (**Verify JWT OFF** — Square can't send a Supabase JWT).
+      Also **redeploy `redeem-code`** (its source changed in Chunk 1 to write a
+      notification).
 - [ ] In Square Dashboard → **Webhooks**, create a subscription pointing at the
-      dev Edge Function URL Claude gives you
-      (`https://enhehzknoomaozsoelxc.supabase.co/functions/v1/square-webhook`),
-      subscribe to the **payment events** Claude specifies (e.g.
-      `payment.updated`), and copy the **Webhook Signature Key**.
+      webhook URL (`https://enhehzknoomaozsoelxc.supabase.co/functions/v1/square-webhook`),
+      subscribe to **`payment.updated`**, and copy the **Webhook Signature Key**.
 - [ ] Set the Edge Function **secrets** in Supabase (Settings → Edge Functions,
       or `supabase secrets set`). NEVER in the repo:
   - `SQUARE_ACCESS_TOKEN` = sandbox access token
+  - `SQUARE_LOCATION_ID` = sandbox Location ID  *(needed by create-checkout)*
   - `SQUARE_WEBHOOK_SIGNATURE_KEY` = the webhook signature key
+  - `SQUARE_WEBHOOK_URL` = the exact subscription URL above  *(Square signs with
+    it; the function falls back to the request URL but set this to be safe)*
   - `SQUARE_ENVIRONMENT` = `sandbox` (then `production` at launch)
+  - `SQUARE_VERSION` *(optional)* = pin an API version, e.g. from the Square
+    console; if unset the function uses your app's default version.
   - (`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are injected automatically.)
 
 > Note: the webhook must be deployed with **JWT verification OFF** (Square can't
@@ -183,17 +226,22 @@ GUARDRAILS (unchanged from the original brief):
 
 ## Part C — Square testing checklist (sandbox)
 
-- [ ] Sandbox purchase via a bundle's payment link → webhook fires → a
-      `purchases` row appears → an `entitlements` row (`source='purchase'`)
-      appears → the bundle's songs unlock for that user.
+- [ ] Click **Buy** on a priced, unowned bundle → redirected to Square's hosted
+      checkout → pay with a sandbox test card → redirected back to the bundle
+      page → shortly after, a `purchases` row + an `entitlements` row
+      (`source='purchase'`) + a `notifications` row (`type='purchase'`) appear →
+      the bundle's songs unlock and the Inbox badge lights up.
+- [ ] Clicking **Buy** on a bundle you **already own** is refused by
+      `create-checkout` (409 "You already own this bundle"); no link is minted.
 - [ ] A webhook with a **bad signature** is rejected (401), no rows written.
 - [ ] A **duplicate** webhook (same `square_payment_id`) does **not** create a
-      second entitlement or purchase (idempotent).
-- [ ] A logged-out visitor can still see active bundles; the Buy button sends
-      them to sign in (or to Square, per your design).
+      second purchase, entitlement, or notification (idempotent).
+- [ ] A logged-out visitor can still see active bundles; the Buy area shows
+      **Sign in** (checkout requires a session so the payment can be attributed).
 - [ ] Re-run the Phase 1–4 RLS checks (two users A/B) to confirm nothing
-      regressed: A can't read B's purchases/entitlements; A can't read
-      access_codes; A can't self-insert an entitlement or purchase.
+      regressed: A can't read B's purchases/entitlements/notifications; A can't
+      read access_codes; A can't self-insert an entitlement, purchase, or
+      notification.
 
 ---
 
@@ -211,35 +259,31 @@ Do this once Phase 5 works in dev. Target = the **`ttn-chords`** (prod) project.
       over). Or build an export/import path if there's a lot.
 
 ### 2. Prod Edge Functions
-- [ ] `supabase link --project-ref <PROD_REF>` then
-      `supabase functions deploy redeem-code` and
-      `supabase functions deploy square-webhook` against prod.
+- [ ] `supabase link --project-ref <PROD_REF>` then deploy all three against
+      prod: `redeem-code`, `create-checkout`, `square-webhook`. (Or paste each in
+      the Dashboard — keep Verify JWT **OFF** for `square-webhook` only.)
 - [ ] Set prod Edge Function secrets: `SQUARE_ACCESS_TOKEN` (LIVE token),
-      `SQUARE_WEBHOOK_SIGNATURE_KEY` (prod webhook), `SQUARE_ENVIRONMENT=production`.
+      `SQUARE_LOCATION_ID` (LIVE location), `SQUARE_WEBHOOK_SIGNATURE_KEY` (prod
+      webhook), `SQUARE_WEBHOOK_URL` (prod function URL),
+      `SQUARE_ENVIRONMENT=production`, and `SQUARE_VERSION` if you pinned one.
 
-### 3. Frontend env on the deploy (REQUIRED — currently missing)
-The GitHub Pages workflow (`.github/workflows/deploy.yml`) builds with **no**
-Supabase env, so prod would ship the "not configured" screen. Fix it:
-- [ ] Add GitHub repo secrets (Settings → Secrets and variables → Actions):
-      `VITE_SUPABASE_URL` = prod URL, `VITE_SUPABASE_ANON_KEY` = prod anon key.
-      (Anon/publishable key only — never the secret key.)
-- [ ] Edit `deploy.yml` so the build step receives them, e.g.:
-      ```yaml
-      - name: Check and build
-        run: npm run build        # (or keep `npm run check`)
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      ```
-      Note: `npm run check` runs tests/build; ensure the env is present for the
-      build it performs. Putting `env:` on the step covers all its commands.
+### 3. Frontend env on the deploy
+- [x] **DONE in code:** `deploy.yml`'s "Check and build" step now passes
+      `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` through as `env:`.
+- [ ] **Still required (human):** add the two GitHub repo secrets so the workflow
+      has values to inject (Settings → Secrets and variables → Actions):
+      `VITE_SUPABASE_URL` = **prod** URL, `VITE_SUPABASE_ANON_KEY` = **prod** anon
+      key. (Anon/publishable key only — NEVER the service-role/secret key.)
+      Until these secrets exist, the deployed site still shows "not configured".
 
 ### 4. Square live
-- [ ] Switch the Square app from **Sandbox** to **Production**; create LIVE
-      payment links per bundle and paste them into each bundle's admin field.
-- [ ] Create a **production webhook** pointing at the prod function URL
-      (`https://<PROD_REF>.supabase.co/functions/v1/square-webhook`) and update
-      `SQUARE_WEBHOOK_SIGNATURE_KEY` to the prod key.
+- [ ] Switch the Square app from **Sandbox** to **Production**; copy the LIVE
+      Access Token + LIVE Location ID into the prod secrets above. (No per-bundle
+      links to create — checkout links are minted dynamically.)
+- [ ] Create a **production webhook** on `payment.updated` pointing at the prod
+      function URL (`https://<PROD_REF>.supabase.co/functions/v1/square-webhook`)
+      and set `SQUARE_WEBHOOK_SIGNATURE_KEY` + `SQUARE_WEBHOOK_URL` to the prod
+      values.
 
 ### 5. Auth hardening for prod
 - [ ] Turn **Confirm email ON** in the prod project (it's off in dev for testing).

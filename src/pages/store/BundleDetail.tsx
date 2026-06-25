@@ -1,13 +1,16 @@
 // One bundle's page. Song titles are shown to everyone (teaser); the full song
-// opens only if the user is entitled. Purchase/redeem land in later phases — for
-// now a locked bundle shows the price and a "checkout coming soon" note.
+// opens only if the user is entitled. A locked bundle offers a Square checkout
+// (per-user payment link) or an access code; logged-out visitors are sent to
+// sign in first.
 
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Check, Lock, Music } from 'lucide-react';
 import {
   useBundle,
   useBundleSongTitles,
   useEntitledBundleIds,
+  startCheckout,
 } from '@/db/repo';
 import { useAuth } from '@/auth/AuthProvider';
 import { formatPrice } from '@/lib/money';
@@ -20,6 +23,21 @@ export function BundleDetail() {
   const titles = useBundleSongTitles(id);
   const owned = useEntitledBundleIds();
   const isOwned = Boolean(id && owned?.has(id));
+  const [buying, setBuying] = useState(false);
+  const [buyError, setBuyError] = useState<string | null>(null);
+
+  async function buy() {
+    if (!id) return;
+    setBuying(true);
+    setBuyError(null);
+    try {
+      // Square sends the buyer back here after paying; the webhook grants access.
+      await startCheckout(id, `${window.location.origin}${import.meta.env.BASE_URL}store/${id}`);
+    } catch (err) {
+      setBuyError(err instanceof Error ? err.message : 'Could not start checkout');
+      setBuying(false);
+    }
+  }
 
   if (bundle === undefined) return <p className="text-sm text-ink-500">Loading…</p>;
   if (bundle === null) {
@@ -54,23 +72,30 @@ export function BundleDetail() {
       </header>
 
       {!isOwned && (
-        <div className="card mb-6 flex flex-wrap items-center justify-between gap-3 p-4">
-          <div>
-            <div className="text-lg font-semibold">{formatPrice(bundle.price_cents)}</div>
-            <p className="text-xs text-ink-500 dark:text-ink-400">
-              {session
-                ? 'Checkout is coming soon. You can also unlock with an access code.'
-                : 'Sign in to purchase or redeem an access code.'}
-            </p>
+        <div className="card mb-6 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-lg font-semibold">{formatPrice(bundle.price_cents)}</div>
+              <p className="text-xs text-ink-500 dark:text-ink-400">
+                {!session
+                  ? 'Sign in to purchase or redeem an access code.'
+                  : bundle.price_cents > 0
+                    ? 'Secure checkout with Square. You can also unlock with an access code.'
+                    : 'Unlock this bundle with an access code.'}
+              </p>
+            </div>
+            {!session ? (
+              <Link className="btn-primary" to="/auth">
+                Sign in
+              </Link>
+            ) : bundle.price_cents > 0 ? (
+              <button className="btn-primary" onClick={() => void buy()} disabled={buying}>
+                {buying ? 'Starting…' : `Buy for ${formatPrice(bundle.price_cents)}`}
+              </button>
+            ) : null}
           </div>
-          {session ? (
-            <button className="btn-primary" disabled title="Checkout coming soon">
-              Buy bundle
-            </button>
-          ) : (
-            <Link className="btn-primary" to="/auth">
-              Sign in
-            </Link>
+          {buyError && (
+            <p className="mt-2 text-xs text-red-600 dark:text-red-400">{buyError}</p>
           )}
         </div>
       )}

@@ -37,6 +37,7 @@ export {
 } from './notifications';
 export {
   redeemCode,
+  startCheckout,
   useAdminBundles,
   createBundle,
   updateBundle,

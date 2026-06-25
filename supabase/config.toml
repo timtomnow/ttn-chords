@@ -1,0 +1,17 @@
+# Supabase CLI config. Only the Edge Function auth settings matter here for this
+# project (functions are deployed via the dashboard too — the per-function
+# "Verify JWT" toggle there sets the same thing). Set project_id when linking the
+# CLI: `supabase link --project-ref <ref>`.
+project_id = "ttn-chords"
+
+# Square cannot send a Supabase JWT, so JWT verification MUST be off for the
+# webhook. Security is Square's HMAC signature check inside the function.
+[functions.square-webhook]
+verify_jwt = false
+
+# Authenticated user actions — keep JWT verification on.
+[functions.create-checkout]
+verify_jwt = true
+
+[functions.redeem-code]
+verify_jwt = true

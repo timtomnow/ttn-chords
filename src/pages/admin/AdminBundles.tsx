@@ -111,7 +111,7 @@ export function AdminBundles() {
             />
           </div>
           <div className="space-y-1">
-            <label className="label" htmlFor="nb-price">Price (USD)</label>
+            <label className="label" htmlFor="nb-price">Price (CAD)</label>
             <input
               id="nb-price"
               className="input"

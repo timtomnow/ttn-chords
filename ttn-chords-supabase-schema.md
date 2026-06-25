@@ -355,10 +355,15 @@ an entitlement via the `songs_select` policy.
 All three simply create an `entitlements` row — the app only ever asks
 "does this user have an entitlement for this bundle?"
 
-- **Square purchase** → user pays via the bundle's `square_link_url` → Square sends a
-  webhook to a Supabase **Edge Function** → the function verifies Square's signature,
-  inserts a `purchases` row and an `entitlements` row (`source='purchase'`). Service
-  role, so RLS is bypassed. The unlock is never trusted to the browser.
+- **Square purchase** → "Buy" calls the **`create-checkout`** Edge Function (authed),
+  which mints a per-user Square payment link with the buyer's `user_id` + the
+  `bundle_id` in the order **metadata**, and redirects there. After payment Square
+  sends a webhook to the **`square-webhook`** Edge Function → it verifies Square's
+  HMAC signature, reads the order metadata back to recover exactly which user +
+  bundle, then inserts a `purchases` row, an `entitlements` row (`source='purchase'`),
+  and an inbox `notifications` row. Service role, so RLS is bypassed; idempotent on
+  `square_payment_id`. The unlock is never trusted to the browser. (The dynamic
+  link means `bundles.square_link_url` is unused by this flow — kept for reference.)
 - **Access code** → user submits a code → an Edge Function looks it up in
   `access_codes` (which users can't read directly), marks it redeemed, inserts an
   `entitlements` row (`source='code'`).
