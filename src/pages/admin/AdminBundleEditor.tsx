@@ -31,7 +31,6 @@ export function AdminBundleEditor() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priceDollars, setPriceDollars] = useState('');
-  const [squareUrl, setSquareUrl] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
@@ -40,7 +39,6 @@ export function AdminBundleEditor() {
     setTitle(bundle.title);
     setDescription(bundle.description ?? '');
     setPriceDollars((bundle.price_cents / 100).toFixed(2));
-    setSquareUrl(bundle.square_link_url ?? '');
     setIsActive(bundle.is_active);
   }, [bundle?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -69,7 +67,6 @@ export function AdminBundleEditor() {
       title: title.trim() || 'Untitled bundle',
       description: description.trim() || null,
       price_cents: cents,
-      square_link_url: squareUrl.trim() || null,
       is_active: isActive,
     });
     setSavedAt(Date.now());
@@ -147,27 +144,15 @@ export function AdminBundleEditor() {
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="label" htmlFor="b-price">Price (CAD)</label>
-              <input
-                id="b-price"
-                className="input"
-                inputMode="decimal"
-                value={priceDollars}
-                onChange={(e) => setPriceDollars(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="label" htmlFor="b-square">Square payment link (Phase 5)</label>
-              <input
-                id="b-square"
-                className="input"
-                value={squareUrl}
-                onChange={(e) => setSquareUrl(e.target.value)}
-                placeholder="https://square.link/…"
-              />
-            </div>
+          <div className="space-y-1">
+            <label className="label" htmlFor="b-price">Price (CAD)</label>
+            <input
+              id="b-price"
+              className="input"
+              inputMode="decimal"
+              value={priceDollars}
+              onChange={(e) => setPriceDollars(e.target.value)}
+            />
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input

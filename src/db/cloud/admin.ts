@@ -92,7 +92,6 @@ export type BundleInput = {
   title: string;
   description?: string | null;
   price_cents?: number;
-  square_link_url?: string | null;
   is_active?: boolean;
 };
 
