@@ -48,8 +48,11 @@ src/
   components/
     layout/        AppShell, Sidebar, BottomNav, Logo, nav (shared nav list)
     ui/            PageHeader, EmptyState (more per phase)
-    chords/        chord-chart renderers (Phase 4)
-    inputs/        shared inputs (TagInput, TempoInput — click-to-type BPM)
+    chords/        chord-chart renderers (Phase 4) + ChordLineEditor
+                   (tap-to-place chords over a lyric line)
+    songs/         ArrangementEditor (performance order over the part pool)
+    inputs/        shared inputs (TagInput, TempoInput — click-to-type BPM,
+                   ChordPalette — key-aware one-tap chords, SpacingPanel)
   db/
     schema.ts      Dexie database (versioned, all tables)
     repo.ts        typed CRUD + useLiveQuery hooks — components import from here
@@ -61,8 +64,12 @@ src/
     ttnBackup.ts   window.TTNBackupAdapter install + restore opener
     chords/        bundled chord library + instrument defaults (Phase 1)
     library/       static starter-library bundles + opt-in import planner (Phase 13)
-    song.ts        difficulty-variant resolvers (sectionsOf/getDifficulty) + uniqueChords
-    music.ts       transpose / chord parsing (Phase 1)
+    song.ts        difficulty-variant resolvers (sectionsOf/getDifficulty),
+                   arrangement resolution (arrangementOf/slotsOf), uniqueChords
+    spacing.ts     auto-distribute beats over a section's chords (Phase 15)
+    chordGrid.ts   bar-grid chord authoring (`| G | C |`) → beat-only events
+    chordproEdit.ts caret-aware ChordPro text edits (editor shortcuts)
+    music.ts       transpose / chord parsing (Phase 1) + diatonicChords
     timeline.ts    flatten per-section beats → one absolute beat timeline (Phase 12)
     chordpro.ts    ChordPro parse/serialize (Phase 2)
     help.ts        in-app Help loader (inlines content/help/*.md, ToC, slugs)
@@ -81,6 +88,22 @@ Full detail in `src/types.ts` and plan.md §3.
   additive only) — **do not break that invariant.** Resolve the active variant
   via `lib/song.ts` `sectionsOf()`/`getDifficulty()`; never read a removed flat
   `Song.sections` (migrated away in Dexie v3).
+- **Sections are a POOL; `SongDifficulty.arrangement[]` is the play order** (Phase
+  15). Entries *reference* a section by id, so a chorus is authored and
+  beat-tagged once and played many times, each occurrence with its own
+  `repeat`/`transpose`/`notes`. **An absent or empty `arrangement` means "the pool
+  in order, once each"** — that's why pre-arrangement songs need no migration.
+  Resolve it with `lib/song.ts` `arrangementOf()`/`slotsOf()`; never walk
+  `sections` directly for playback, reading or PDF output. Two indices that used
+  to be one: `sectionIndex` = pool index (what `lib/beatEdit` writes to, so an
+  edit hits every occurrence) and `slotIndex` = performance order (the index into
+  `Timeline.sections`). A `TimelineItem.id` is NOT unique on the timeline — key
+  React off `TimelineItem.key`.
+- **`Section.grid?: string`** is the authored bar-grid source for a
+  chord-grid part (`lib/chordGrid.ts`). The COMPILED events in `lines` stay
+  canonical — the grid is a source you recompile from, like `Song.source`. Grid
+  compilation uses deterministic event ids so the editor's autosave doesn't churn
+  identity. In the editor a part is either lyric-authored or grid-authored.
 - **Setlist** → `entries[]` with per-performance `difficultyId?`/`transpose`/
   `capo`/`notes`.
 - **Starter library** — static `SongBundle`s in `src/lib/library/`; opt-in sync

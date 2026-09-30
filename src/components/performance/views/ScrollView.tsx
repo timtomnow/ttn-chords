@@ -8,13 +8,13 @@ import { ScrollText } from 'lucide-react';
 import { ChordLine } from '@/components/chords/ChordLine';
 import { RhythmChart } from '@/components/rhythm/RhythmChart';
 import { useRhythmPatternsByIds, useRhythmSymbolMap } from '@/db/repo';
-import { defaultLabelForKind } from '@/lib/chordpro';
+import { occurrenceLabel } from '@/lib/song';
 import { registerView } from '@/lib/performance/registry';
 import type { PerformanceViewProps } from '@/lib/performance/types';
 
 function ScrollView({
   song,
-  sections,
+  slots,
   transpose,
   preferFlats,
   fontScale,
@@ -28,8 +28,8 @@ function ScrollView({
   const lastTsRef = useRef<number | null>(null);
 
   const patternIds = useMemo(
-    () => sections.map((s) => s.rhythmPatternId).filter((id): id is string => Boolean(id)),
-    [sections],
+    () => slots.map((s) => s.section.rhythmPatternId).filter((id): id is string => Boolean(id)),
+    [slots],
   );
   const patterns = useRhythmPatternsByIds(patternIds);
   const symbolMap = useRhythmSymbolMap();
@@ -83,14 +83,26 @@ function ScrollView({
       style={{ fontSize: `${fontScale}rem` }}
     >
       <div className="mx-auto max-w-3xl space-y-8 pb-[60vh]">
-        {sections.map((section) => {
+        {/* Performance order, so a chorus the arrangement plays four times is
+            read four times — each occurrence carrying its own transpose/notes. */}
+        {slots.map((slot, i) => {
+          const section = slot.section;
           const pattern = section.rhythmPatternId
             ? patterns?.get(section.rhythmPatternId)
             : undefined;
           return (
-            <section key={section.id}>
-              <h3 className="mb-2 text-[0.7em] font-semibold uppercase tracking-wide text-accent">
-                {section.label || defaultLabelForKind(section.kind)}
+            <section key={slot.key}>
+              <h3 className="mb-2 flex flex-wrap items-baseline gap-2 text-[0.7em] font-semibold uppercase tracking-wide text-accent">
+                {occurrenceLabel(slots, i)}
+                {slot.repeat > 1 && <span className="text-ink-400">×{slot.repeat}</span>}
+                {slot.transpose !== 0 && (
+                  <span className="text-ink-400">
+                    {slot.transpose > 0 ? `+${slot.transpose}` : slot.transpose}
+                  </span>
+                )}
+                {slot.notes && (
+                  <span className="normal-case tracking-normal text-ink-400">{slot.notes}</span>
+                )}
               </h3>
               {pattern && (
                 <div className="mb-3 overflow-x-auto">
@@ -102,7 +114,7 @@ function ScrollView({
                   <ChordLine
                     key={line.id}
                     line={line}
-                    transpose={transpose}
+                    transpose={transpose + slot.transpose}
                     preferFlats={preferFlats}
                     onChordClick={onChordClick}
                   />

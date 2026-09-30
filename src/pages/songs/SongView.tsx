@@ -13,9 +13,8 @@ import { ChordChart } from '@/components/chords/ChordChart';
 import { ChordPopover } from '@/components/chords/ChordPopover';
 import { useChartResolver } from '@/components/chords/useChartResolver';
 import { RhythmChart } from '@/components/rhythm/RhythmChart';
-import { defaultLabelForKind } from '@/lib/chordpro';
 import { preferFlatsForKey, transposeChordSymbol } from '@/lib/music';
-import { sectionsOf, sortedDifficulties, uniqueChords } from '@/lib/song';
+import { occurrenceLabel, sectionsOf, slotsOf, uniqueChordsInSlots, sortedDifficulties } from '@/lib/song';
 import { SongNotes } from './SongNotes';
 import type { Song } from '@/types';
 
@@ -47,7 +46,10 @@ function View({ song }: { song: Song }) {
   const [transpose, setTranspose] = useState(0);
   const difficulties = sortedDifficulties(song);
   const [diffId, setDiffId] = useState(song.defaultDifficultyId);
+  // Pool (unique authored parts) vs. slots (performance order — a chorus the
+  // arrangement plays four times appears four times).
   const sections = useMemo(() => sectionsOf(song, diffId), [song, diffId]);
+  const slots = useMemo(() => slotsOf(song, diffId), [song, diffId]);
   const [popover, setPopover] = useState<{ chord: string; anchor: { x: number; y: number } } | null>(
     null,
   );
@@ -55,8 +57,8 @@ function View({ song }: { song: Song }) {
 
   const flats = preferFlatsForKey(song.key);
   const chords = useMemo(
-    () => uniqueChords(sections, transpose, flats),
-    [sections, transpose, flats],
+    () => uniqueChordsInSlots(slots, transpose, flats),
+    [slots, transpose, flats],
   );
 
   const patternIds = useMemo(
@@ -176,14 +178,24 @@ function View({ song }: { song: Song }) {
 
       {/* Body */}
       <div className="space-y-6">
-        {sections.map((section) => {
+        {slots.map((slot, i) => {
+          const section = slot.section;
           const pattern = section.rhythmPatternId
             ? patterns?.get(section.rhythmPatternId)
             : undefined;
           return (
-            <section key={section.id}>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-accent">
-                {section.label || defaultLabelForKind(section.kind)}
+            <section key={slot.key}>
+              <h3 className="mb-2 flex flex-wrap items-baseline gap-2 text-sm font-semibold uppercase tracking-wide text-accent">
+                {occurrenceLabel(slots, i)}
+                {slot.repeat > 1 && <span className="text-ink-400">×{slot.repeat}</span>}
+                {slot.transpose !== 0 && (
+                  <span className="text-ink-400">
+                    {slot.transpose > 0 ? `+${slot.transpose}` : slot.transpose}
+                  </span>
+                )}
+                {slot.notes && (
+                  <span className="normal-case tracking-normal text-ink-400">{slot.notes}</span>
+                )}
               </h3>
               {pattern && (
                 <div className="mb-3 overflow-x-auto">
@@ -195,7 +207,7 @@ function View({ song }: { song: Song }) {
                   <ChordLine
                     key={line.id}
                     line={line}
-                    transpose={transpose}
+                    transpose={transpose + slot.transpose}
                     preferFlats={flats}
                     onChordClick={(chord, anchor) => setPopover({ chord, anchor })}
                   />

@@ -24,6 +24,7 @@ import {
   quarterBeatsPerBar,
   type TimelineItem,
 } from '@/lib/timeline';
+import { occurrenceLabel } from '@/lib/song';
 import {
   addChordEvent,
   addLyricAnchor,
@@ -311,7 +312,9 @@ function HorizontalView({
     void updateDifficultySections(song.id, difficultyId, next);
   const step = 4 / grid;
   function commitItem(item: TimelineItem, absBeat: number) {
-    const span = timeline.sections[item.sectionIndex];
+    // Span lookup is by performance-order slot; the WRITE below is by pool index
+    // (item.sectionIndex), so editing one occurrence retimes them all.
+    const span = timeline.sections[item.slotIndex];
     if (!span) return;
     const passStart = span.startBeat + item.repetition * span.passBeats;
     const rel = clamp(absBeat - passStart, 0, span.passBeats);
@@ -359,9 +362,9 @@ function HorizontalView({
     setAdding(null);
   }
 
-  /** Snap an absolute beat to the grid, expressed relative to one pass of `span`. */
-  function snappedRel(sectionIndex: number, repetition: number, absBeat: number): Beats {
-    const span = timeline.sections[sectionIndex];
+  /** Snap an absolute beat to the grid, expressed relative to one pass of a slot. */
+  function snappedRel(slotIndex: number, repetition: number, absBeat: number): Beats {
+    const span = timeline.sections[slotIndex];
     const passStart = span.startBeat + repetition * span.passBeats;
     const rel = clamp(absBeat - passStart, 0, span.passBeats);
     return snapBeats(Math.round(rel / step) * step);
@@ -370,13 +373,16 @@ function HorizontalView({
   /** Open the inline chord/lyric input from a click, given the resolved placement. */
   function openAdd(p: {
     kind: 'chord' | 'lyric';
+    /** Pool index — where the new event is written. */
     sectionIndex: number;
+    /** Performance-order index — where on the timeline the input appears. */
+    slotIndex: number;
     repetition: number;
     beat: Beats;
     lineId?: string;
     charIndex?: number;
   }) {
-    const span = timeline.sections[p.sectionIndex];
+    const span = timeline.sections[p.slotIndex];
     const abs = span.startBeat + p.repetition * span.passBeats + beatsToNumber(p.beat);
     setSelectedId(null);
     setEditingLyric(null);
@@ -401,7 +407,13 @@ function HorizontalView({
       0,
       Math.max(0, Math.round(span.lengthBeats / span.passBeats) - 1),
     );
-    openAdd({ kind, sectionIndex: span.sectionIndex, repetition: rep, beat: snappedRel(span.sectionIndex, rep, absBeat) });
+    openAdd({
+      kind,
+      sectionIndex: span.sectionIndex,
+      slotIndex: span.slotIndex,
+      repetition: rep,
+      beat: snappedRel(span.slotIndex, rep, absBeat),
+    });
   }
 
   /** Click a lyric character in chord-add mode → a chord anchored over that letter. */
@@ -411,8 +423,9 @@ function HorizontalView({
     openAdd({
       kind: 'chord',
       sectionIndex: item.sectionIndex,
+      slotIndex: item.slotIndex,
       repetition: item.repetition,
-      beat: snappedRel(item.sectionIndex, item.repetition, absBeat),
+      beat: snappedRel(item.slotIndex, item.repetition, absBeat),
       lineId: item.line.id,
       charIndex: (item.event.charIndex ?? 0) + charOffset,
     });
@@ -451,7 +464,7 @@ function HorizontalView({
     if (!editingLyric) return;
     const item = timeline.items.find((i) => i.id === editingLyric.id);
     if (!item) return;
-    const span = timeline.sections[item.sectionIndex];
+    const span = timeline.sections[item.slotIndex];
     const passStart = span.startBeat + item.repetition * span.passBeats;
     const rel = clamp(item.absBeat - passStart + step, 0, span.passBeats);
     writeSections(splitLyricEvent(sections, editingLyric.id, caret, text, snapBeats(rel)));
@@ -512,8 +525,8 @@ function HorizontalView({
             >
               <option value="">Jump to…</option>
               {timeline.sections.map((s, i) => (
-                <option key={s.section.id + i} value={i}>
-                  {s.section.label || defaultLabelForKind(s.section.kind)}
+                <option key={`${s.entryId}#${i}`} value={i}>
+                  {occurrenceLabel(timeline.sections, i)}
                 </option>
               ))}
             </select>
@@ -723,7 +736,7 @@ function HorizontalView({
                 const dispAbs = drag?.id === item.id ? drag.absBeat : item.absBeat;
                 const left = dispAbs * pxPerBeat;
                 const sym = item.event.chord
-                  ? transposeChordSymbol(item.event.chord, transpose, preferFlats)
+                  ? transposeChordSymbol(item.event.chord, transpose + item.transpose, preferFlats)
                   : '·';
                 // A placeholder onset (no chord, or a bare ".") isn't a real
                 // chord — render it muted so it reads as a faint timing dot.
@@ -739,7 +752,7 @@ function HorizontalView({
                 const selected = editMode && item.id === selectedId;
                 const row = lyricRows.get(item.event.id) ?? 0;
                 return (
-                  <div key={`${item.id}-${item.repetition}`} className="absolute" style={{ left, top: '34%' }}>
+                  <div key={item.key} className="absolute" style={{ left, top: '34%' }}>
                     <button
                       type="button"
                       onPointerDown={(e) => onMarkerDown(e, item)}
@@ -866,6 +879,7 @@ function HorizontalView({
 function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
 }
+
 
 registerView({
   id: 'horizontal',

@@ -95,6 +95,14 @@ export type Section = {
   rhythmPatternId?: string;
   /** How many times the section repeats when performed. */
   repeat?: number;
+  /**
+   * Bar-grid source text for a chord-grid-authored section, e.g.
+   * `|: G | C | Am  D :| x2` (see `lib/chordGrid.ts`). The COMPILED chord events
+   * in `lines` stay canonical — this is the authored source the editor recompiles
+   * from, exactly as `Song.source` is for a pasted song. A section with no `grid`
+   * is lyric-authored (inline ChordPro `[G]` anchors). Additive/optional.
+   */
+  grid?: string;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -156,13 +164,45 @@ export type RhythmPattern = {
  * Level-3 version; the Perform view toggles between whichever exist. Each
  * variant is tagged for beats independently. `level` is 1 (easiest)–5 (hardest).
  */
+/**
+ * One slot in a variant's performance order — a *reference* to a section in the
+ * pool rather than a copy of it. This is what lets a chorus be authored (and
+ * beat-tagged) once but played four times: the arrangement names it four times,
+ * and every occurrence shares the one set of chords and beats.
+ *
+ * `Section.repeat` is still the way to say "play this block twice back to back";
+ * an arrangement entry's `repeat` overrides it for this occurrence only.
+ */
+export type ArrangementEntry = {
+  id: string;
+  /** Which section in the variant's `sections` pool this slot plays. */
+  sectionId: string;
+  /** Back-to-back passes for this occurrence; falls back to `Section.repeat`. */
+  repeat?: number;
+  /** Semitones to transpose this occurrence (e.g. a last chorus up a tone). */
+  transpose?: number;
+  /** Performance note shown only for this occurrence. */
+  notes?: string;
+};
+
 export type SongDifficulty = {
   id: string;
   level: number;
   /** Optional display label, e.g. "Beginner", "Standard". */
   label?: string;
-  /** Structured body for this variant — the canonical representation. */
+  /**
+   * The POOL of unique sections — each authored and beat-tagged once. Play order
+   * comes from `arrangement`; when that's absent the pool order IS the play
+   * order, which is why every pre-arrangement song stays valid unchanged.
+   */
   sections: Section[];
+  /**
+   * Performance order as references into `sections`. Optional: absent or empty
+   * means "play the pool in order, once each". Resolve it with `lib/song.ts`
+   * `slotsOf()` / `arrangementOf()` — never walk `sections` directly for
+   * playback, reading or PDF output.
+   */
+  arrangement?: ArrangementEntry[];
 };
 
 export type Song = {
@@ -459,6 +499,13 @@ export type AppSettings = {
   horizontalBarSize?: 'sm' | 'md' | 'lg';
   defaultTimeSignature?: TimeSignature;
   defaultTempo?: number;
+  /**
+   * Default quarter-note beats per chord for the "space chords evenly" tool
+   * (see `lib/spacing.ts`). 2 and 4 are the usual answers. Additive; non-indexed.
+   */
+  defaultChordBeats?: number;
+  /** Last-used spacing mode for that tool ('line' | 'fixed' | 'proportional'). */
+  defaultSpacingMode?: string;
   /** Metronome tool preferences (Music Tools). Additive; non-indexed. */
   metronome?: MetronomeSettings;
   /** Tuner tool preferences (Music Tools). Additive; non-indexed. */

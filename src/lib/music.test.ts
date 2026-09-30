@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   capoTransposeDelta,
+  diatonicChords,
   chordTones,
   mod12,
   noteName,
@@ -107,5 +108,65 @@ describe('capoTransposeDelta', () => {
   it('is the negative capo fret', () => {
     expect(capoTransposeDelta(3)).toBe(-3);
     expect(capoTransposeDelta(0)).toBe(0);
+  });
+});
+
+describe('diatonicChords', () => {
+  it('gives the seven triads of a major key in scale order, plus V7', () => {
+    expect(diatonicChords('C').map((c) => c.symbol)).toEqual([
+      'C',
+      'Dm',
+      'Em',
+      'F',
+      'G',
+      'Am',
+      'Bdim',
+      'G7',
+    ]);
+  });
+
+  it('spells a flat key with flats', () => {
+    expect(diatonicChords('Bb').map((c) => c.symbol)).toEqual([
+      'Bb',
+      'Cm',
+      'Dm',
+      'Eb',
+      'F',
+      'Gm',
+      'Adim',
+      'F7',
+    ]);
+  });
+
+  it('handles a minor key', () => {
+    expect(diatonicChords('Am').map((c) => c.symbol)).toEqual([
+      'Am',
+      'Bdim',
+      'C',
+      'Dm',
+      'Em',
+      'F',
+      'G',
+      'E7',
+    ]);
+  });
+
+  it('labels the degrees with roman numerals', () => {
+    expect(diatonicChords('G').map((c) => c.numeral)).toEqual([
+      'I',
+      'ii',
+      'iii',
+      'IV',
+      'V',
+      'vi',
+      'vii°',
+      'V7',
+    ]);
+  });
+
+  it('returns nothing for a missing or unreadable key', () => {
+    expect(diatonicChords(undefined)).toEqual([]);
+    expect(diatonicChords('')).toEqual([]);
+    expect(diatonicChords('not a key')).toEqual([]);
   });
 });

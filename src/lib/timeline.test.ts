@@ -135,3 +135,113 @@ describe('buildTimeline', () => {
     expect(tl.items).toHaveLength(0); // no timed events
   });
 });
+
+describe('buildTimeline — arrangement', () => {
+  /** A song whose arrangement plays one authored chorus at three points. */
+  function arranged() {
+    const verse = section([evAt('G', 0, b(0))], {
+      lines: [{ id: id(), lyric: 'verse words', events: [] }],
+    });
+    verse.lines[0].events = [{ id: 'v-ev', chord: 'G', charIndex: 0, beat: b(0) }];
+    const chorus = section([], {
+      lines: [{ id: id(), lyric: 'chorus', events: [{ id: 'c-ev', chord: 'C', charIndex: 0, beat: b(0) }] }],
+    });
+    const s = song([verse, chorus], {
+      difficulties: [
+        {
+          id: 'd',
+          level: 3,
+          sections: [verse, chorus],
+          arrangement: [
+            { id: 'a1', sectionId: verse.id },
+            { id: 'a2', sectionId: chorus.id },
+            { id: 'a3', sectionId: verse.id },
+            { id: 'a4', sectionId: chorus.id },
+          ],
+        },
+      ],
+    });
+    return { song: s, verse, chorus };
+  }
+
+  it('lays each occurrence end-to-end', () => {
+    const { song: s } = arranged();
+    const tl = buildTimeline(s, defaults);
+    expect(tl.sections.map((sp) => sp.startBeat)).toEqual([0, 4, 8, 12]);
+    expect(tl.totalBeats).toBe(16);
+  });
+
+  it('places one authored event once per occurrence', () => {
+    const { song: s, chorus } = arranged();
+    const tl = buildTimeline(s, defaults);
+    const chorusItems = tl.items.filter((i) => i.section.id === chorus.id);
+    expect(chorusItems.map((i) => i.absBeat)).toEqual([4, 12]);
+    // Same authored event id, distinct timeline keys.
+    expect(new Set(chorusItems.map((i) => i.id)).size).toBe(1);
+    expect(new Set(chorusItems.map((i) => i.key)).size).toBe(2);
+  });
+
+  it('keeps sectionIndex on the pool and slotIndex on the performance order', () => {
+    const { song: s, chorus } = arranged();
+    const tl = buildTimeline(s, defaults);
+    const chorusItems = tl.items.filter((i) => i.section.id === chorus.id);
+    // Both occurrences write back to pool index 1 — editing one retimes both.
+    expect(chorusItems.map((i) => i.sectionIndex)).toEqual([1, 1]);
+    expect(chorusItems.map((i) => i.slotIndex)).toEqual([1, 3]);
+    for (const item of tl.items) {
+      expect(tl.sections[item.slotIndex].startBeat).toBeLessThanOrEqual(item.absBeat);
+    }
+  });
+
+  it('numbers bars continuously across the whole arrangement', () => {
+    const { song: s } = arranged();
+    expect(buildTimeline(s, defaults).bars.map((bar) => bar.number)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('applies a per-occurrence repeat', () => {
+    const { song: s, chorus } = arranged();
+    const diff = s.difficulties[0];
+    const withRepeat: Song = {
+      ...s,
+      difficulties: [
+        {
+          ...diff,
+          arrangement: [{ id: 'a1', sectionId: chorus.id, repeat: 3 }],
+        },
+      ],
+    };
+    const tl = buildTimeline(withRepeat, defaults);
+    expect(tl.totalBeats).toBe(12);
+    expect(tl.items.map((i) => i.absBeat)).toEqual([0, 4, 8]);
+  });
+
+  it('carries a per-occurrence transpose onto every item', () => {
+    const { song: s, chorus } = arranged();
+    const diff = s.difficulties[0];
+    const tl = buildTimeline(
+      {
+        ...s,
+        difficulties: [
+          {
+            ...diff,
+            arrangement: [
+              { id: 'a1', sectionId: chorus.id },
+              { id: 'a2', sectionId: chorus.id, transpose: 2 },
+            ],
+          },
+        ],
+      },
+      defaults,
+    );
+    expect(tl.items.map((i) => i.transpose)).toEqual([0, 2]);
+  });
+
+  it('behaves exactly as before for a song with no arrangement', () => {
+    const s1 = section([evAt('G', 0, b(0))]);
+    const s2 = section([evAt('C', 0, b(0))]);
+    const tl = buildTimeline(song([s1, s2]), defaults);
+    expect(tl.sections.map((sp) => sp.sectionIndex)).toEqual([0, 1]);
+    expect(tl.sections.map((sp) => sp.slotIndex)).toEqual([0, 1]);
+    expect(tl.items.map((i) => i.absBeat)).toEqual([0, 4]);
+  });
+});

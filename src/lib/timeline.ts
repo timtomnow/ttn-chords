@@ -6,13 +6,22 @@
 // The stored model (see types.ts) keeps `ChordEvent.beat` *relative to its
 // section*; this module resolves each section's effective tempo/time-signature
 // (section override → song → app defaults), computes each section's length in
-// bars, lays the sections end-to-end, and exposes absolute beat positions for
-// every timed chord event plus the bar grid.
+// bars, lays the PERFORMANCE ORDER end-to-end, and exposes absolute beat
+// positions for every timed chord event plus the bar grid.
+//
+// Performance order comes from the variant's arrangement (`lib/song.ts`
+// `slotsOf`), so one authored section can appear at several points on the
+// timeline. Two different indices matter and must not be confused:
+//   - `sectionIndex` — position in the section POOL. This is what beat edits
+//     write to (`lib/beatEdit.ts` indexes `Section[]` by it), and editing one
+//     occurrence therefore changes every occurrence, which is the point.
+//   - `slotIndex` — position in the performance order, i.e. the index into
+//     `Timeline.sections`. Use this to look a span up from an item.
 //
 // Pure + unit-tested (timeline.test.ts). No React, no DB.
 
 import type { Beats, ChordEvent, Line, Section, Song, TimeSignature } from '@/types';
-import { sectionsOf } from '@/lib/song';
+import { sectionsOf, slotsOf } from '@/lib/song';
 
 export const DEFAULT_TS: TimeSignature = { beats: 4, unit: 4 };
 export const DEFAULT_TEMPO = 100;
@@ -46,13 +55,21 @@ export type TimelineDefaults = {
 
 /** One timed chord event placed on the absolute timeline. */
 export type TimelineItem = {
-  /** Stable per-event id (the underlying ChordEvent id). */
+  /** Stable per-event id (the underlying ChordEvent id). NOT unique on the
+   *  timeline: a section played three times yields three items per event. */
   id: string;
+  /** Unique per placement — the React key to use, and the id never is. */
+  key: string;
   event: ChordEvent;
   line: Line;
   section: Section;
+  /** Index into the variant's `sections` pool — what beat edits write to. */
   sectionIndex: number;
-  /** Which repeat pass this item belongs to (0-based). */
+  /** Index into `Timeline.sections` — the performance-order span this sits in. */
+  slotIndex: number;
+  /** Semitones this occurrence is transposed by (from the arrangement entry). */
+  transpose: number;
+  /** Which repeat pass within the slot this item belongs to (0-based). */
   repetition: number;
   /** Absolute onset, quarter-note beats from song start. */
   absBeat: number;
@@ -69,7 +86,14 @@ export type TimelineBar = {
 
 export type SectionSpan = {
   section: Section;
+  /** Index into the variant's `sections` pool — what beat edits write to. */
   sectionIndex: number;
+  /** This span's own index in `Timeline.sections` (performance order). */
+  slotIndex: number;
+  /** The arrangement entry behind this span (the section id when implicit). */
+  entryId: string;
+  /** Semitones this occurrence is transposed by. */
+  transpose: number;
   startBeat: number;
   /** Total length including all repeats, in quarter-note beats. */
   lengthBeats: number;
@@ -119,8 +143,10 @@ function passLength(section: Section, barBeats: number): number {
 }
 
 /**
- * Build the absolute timeline. Sections lay end-to-end; `section.repeat`
- * (default 1) duplicates a section's items and length.
+ * Build the absolute timeline. The variant's performance order (arrangement, or
+ * the section pool when there is none) lays end-to-end; each slot's `repeat`
+ * (from the arrangement entry, else `section.repeat`, default 1) duplicates that
+ * block's items and length back to back.
  */
 export function buildTimeline(
   song: Song,
@@ -134,12 +160,13 @@ export function buildTimeline(
   let cursor = 0;
   let barNumber = 1;
 
-  sectionsOf(song, difficultyId).forEach((section, sectionIndex) => {
+  slotsOf(song, difficultyId).forEach((slot) => {
+    const { section, sectionIndex, slotIndex } = slot;
     const ts = effectiveTs(section, song, defaults);
     const tempo = effectiveTempo(section, song, defaults);
     const barBeats = quarterBeatsPerBar(ts);
     const passBeats = passLength(section, barBeats);
-    const repeats = Math.max(1, section.repeat ?? 1);
+    const repeats = slot.repeat;
     const startBeat = cursor;
 
     for (let rep = 0; rep < repeats; rep++) {
@@ -156,10 +183,13 @@ export function buildTimeline(
           if (!event.beat) continue;
           items.push({
             id: event.id,
+            key: `${slot.key}:${event.id}:${rep}`,
             event,
             line,
             section,
             sectionIndex,
+            slotIndex,
+            transpose: slot.transpose,
             repetition: rep,
             absBeat: passStart + beatsToNumber(event.beat),
           });
@@ -171,6 +201,9 @@ export function buildTimeline(
     sections.push({
       section,
       sectionIndex,
+      slotIndex,
+      entryId: slot.entryId,
+      transpose: slot.transpose,
       startBeat,
       lengthBeats,
       passBeats,
@@ -245,7 +278,12 @@ export function lyricPackets(timeline: Timeline): Map<string, string> {
     if (current) map.set(current.id, tidy(current.parts));
   };
 
+  // Performance order can visit the same authored section several times; packets
+  // are keyed by event id, so walk each authored section once.
+  const visited = new Set<string>();
   for (const span of timeline.sections) {
+    if (visited.has(span.section.id)) continue;
+    visited.add(span.section.id);
     for (const line of span.section.lines) {
       const lyric = line.lyric;
       const anchors = line.events

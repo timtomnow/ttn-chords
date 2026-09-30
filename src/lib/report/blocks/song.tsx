@@ -17,7 +17,7 @@ import { useChartResolver } from '@/components/chords/useChartResolver';
 import { RhythmChart } from '@/components/rhythm/RhythmChart';
 import { defaultLabelForKind } from '@/lib/chordpro';
 import { preferFlatsForKey, transposeChordSymbol } from '@/lib/music';
-import { sectionsOf, sortedDifficulties, uniqueChords } from '@/lib/song';
+import { occurrenceLabel, sectionsOf, slotsOf, sortedDifficulties, uniqueChordsInSlots } from '@/lib/song';
 import { registerBlock } from '../registry';
 import type { BlockEditorProps, BlockRenderProps } from '../types';
 
@@ -57,23 +57,26 @@ function Render({ block, mode }: BlockRenderProps) {
 
   const sectionIds = c.sectionIds;
   const difficultyId = c.difficultyId;
-  const sections = useMemo(() => {
+  // Print the PERFORMANCE order (the arrangement), so a songbook page reads the
+  // way the song is played. `sectionIds` filters by authored part, so unticking
+  // "Chorus" drops every occurrence of it.
+  const slots = useMemo(() => {
     if (!song) return [];
-    const all = sectionsOf(song, difficultyId);
+    const all = slotsOf(song, difficultyId);
     if (!sectionIds) return all;
-    return all.filter((s) => sectionIds.includes(s.id));
+    return all.filter((slot) => sectionIds.includes(slot.section.id));
   }, [song, difficultyId, sectionIds]);
 
   const patternIds = useMemo(
-    () => sections.map((s) => s.rhythmPatternId).filter((id): id is string => Boolean(id)),
-    [sections],
+    () => slots.map((s) => s.section.rhythmPatternId).filter((id): id is string => Boolean(id)),
+    [slots],
   );
   const patterns = useRhythmPatternsByIds(patternIds);
   const symbolMap = useRhythmSymbolMap();
 
   const chartChords = useMemo(
-    () => (c.showCharts ? uniqueChords(sections, c.transpose, flats) : []),
-    [c.showCharts, sections, c.transpose, flats],
+    () => (c.showCharts ? uniqueChordsInSlots(slots, c.transpose, flats) : []),
+    [c.showCharts, slots, c.transpose, flats],
   );
 
   if (!c.songId) {
@@ -126,14 +129,24 @@ function Render({ block, mode }: BlockRenderProps) {
       )}
 
       <div className="space-y-3">
-        {sections.map((section) => {
+        {slots.map((slot, i) => {
+          const section = slot.section;
           const pattern = section.rhythmPatternId
             ? patterns?.get(section.rhythmPatternId)
             : undefined;
           return (
-            <section key={section.id} data-section-id={section.id} className="break-inside-avoid">
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-accent [break-after:avoid]">
-                {section.label || defaultLabelForKind(section.kind)}
+            <section key={slot.key} data-section-id={section.id} className="break-inside-avoid">
+              <h3 className="mb-1 flex flex-wrap items-baseline gap-2 text-xs font-semibold uppercase tracking-wide text-accent [break-after:avoid]">
+                {occurrenceLabel(slots, i)}
+                {slot.repeat > 1 && <span className="text-ink-400">×{slot.repeat}</span>}
+                {slot.transpose !== 0 && (
+                  <span className="text-ink-400">
+                    {slot.transpose > 0 ? `+${slot.transpose}` : slot.transpose}
+                  </span>
+                )}
+                {slot.notes && (
+                  <span className="normal-case tracking-normal text-ink-400">{slot.notes}</span>
+                )}
               </h3>
               {c.showRhythm && pattern && (
                 <div className="mb-2 break-inside-avoid">
@@ -145,7 +158,11 @@ function Render({ block, mode }: BlockRenderProps) {
                   {section.lines.map((line) => (
                     // Keep each line's chords welded to its lyric across a page break.
                     <div key={line.id} className="break-inside-avoid">
-                      <ChordLine line={line} transpose={c.transpose} preferFlats={flats} />
+                      <ChordLine
+                        line={line}
+                        transpose={c.transpose + slot.transpose}
+                        preferFlats={flats}
+                      />
                     </div>
                   ))}
                 </div>
@@ -240,7 +257,7 @@ function Editor({ block, onChange }: BlockEditorProps) {
 
       {song && editorSections.length > 0 && (
         <div>
-          <span className="label mb-1">Sections</span>
+          <span className="label mb-1">Parts</span>
           <div className="space-y-1">
             {editorSections.map((s) => {
               const checked = c.sectionIds === null || c.sectionIds.includes(s.id);

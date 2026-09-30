@@ -378,6 +378,87 @@ migration: wrap each song's flat `sections` into a default difficulty).
   `_N` duplicate, apply-to-all or per-song; setlist song refs remapped). Legacy
   JSON/backup imports normalize old flat-`sections` songs to the v3 shape.
 
+
+### Phase 15 — Song-input overhaul: arrangements, chord grids, auto-spacing ✅
+Make getting a song *in* the cheap part. No new deps; no Dexie bump (songs live
+in the Supabase `content` jsonb, and every new field is additive and optional).
+Five pieces, all built on the existing `ChordEvent.beat` rational-timing layer —
+that invariant is untouched, and `duration` stays reserved.
+
+- **Auto-spacing** (`src/lib/spacing.ts`, unit-tested): derive the whole timing
+  layer from the text instead of tapping it in. Three modes — `fixed` (N beats per
+  chord straight through), `line` (same spacing but every lyric line restarts on a
+  downbeat — the default, right for most hymn/folk material), `proportional`
+  (within each line's bar span, onsets follow each chord's `charIndex` through the
+  text, forced strictly increasing on the grid). `skipTimedSections` leaves
+  hand-tagged parts alone; `spacingPreview` drives the "N chords in M parts" line;
+  `clearAllBeats` is the undo. Surfaced by
+  `components/inputs/SpacingPanel.tsx` in **both** the editor's Beats card and the
+  tag-beats review toolbar (**Space**), with `AppSettings.defaultChordBeats` /
+  `defaultSpacingMode` remembered across the two.
+- **Chord grids** (`src/lib/chordGrid.ts`, unit-tested; `Section.grid?: string`):
+  a per-part bar-grid authoring mode — `| G | C | Am  D | G . . C |`,
+  `|: G | C :| x4`, `%` to repeat a bar, `-`/`.`/`/`/`_` as hold slots, `| - |`
+  for a bar of rest. A bar's tokens split it into equal slots, so "two chords per
+  bar" needs no beat typing at all. Compiles to ordinary beat-only `ChordEvent`s
+  (exact rationals via `reduceBeats`, so 3 chords in 4/4 give 0, 4/3, 8/3) with
+  **deterministic** ids (`<sectionId>:g:<bar>:<slot>`) so the 600ms autosave
+  doesn't churn event identity. The grid text is the authored *source*, the events
+  stay canonical — same relationship as `Song.source`. `applyGridToSection` puts
+  the compiled chords on a leading chord-only line and keeps the lyric lines
+  beneath; `eventsToGrid` seeds the text when an existing part is switched into
+  Grid mode (approximate by nature — it can't recover `%` or repeat brackets).
+  Blank chunks between bar lines are layout, not bars, which is what lets a grid
+  wrap onto rows.
+- **Arrangements** (`SongDifficulty.arrangement?: ArrangementEntry[]`): the
+  section list became a POOL of unique parts plus a performance order that
+  *references* them, so a chorus is authored and beat-tagged once and played four
+  times. Resolved by `lib/song.ts` `arrangementOf`/`slotsOf` into
+  `ArrangementSlot`s; **absent or empty means "pool order, once each"**, so every
+  pre-existing song stays valid with no migration. Per-occurrence `repeat`,
+  `transpose` and `notes`. `buildTimeline` lays slots end-to-end and now
+  distinguishes two indices that used to be one — `sectionIndex` (pool; what
+  `lib/beatEdit` writes to, so editing one occurrence retimes all of them) and
+  `slotIndex` (performance order; the index into `Timeline.sections`) — plus a
+  unique `TimelineItem.key` since an event id repeats across occurrences.
+  `PerformanceViewProps` gained `slots` alongside `sections`; Scroll view, song
+  view and the report song block all read the arrangement (numbered by
+  `occurrenceLabel`: "Chorus 2") while the Highway keeps writing to the pool.
+  UI: `components/songs/ArrangementEditor.tsx` (dnd-kit chips, per-slot settings,
+  **Build an arrangement** / **Reset to parts order**); `pruneArrangement` on save
+  guarantees no dangling `sectionId`.
+- **Chord input that isn't typing** — the `[`/`#`/`/` keys are the real cost of a
+  tablet keyboard:
+  - `components/inputs/ChordPalette.tsx` — the song's own chords, then the key's
+    diatonic triads + V7 with roman numerals (new `lib/music.ts`
+    `diatonicChords`). Taps insert at the caret (or append to a grid).
+  - `components/chords/ChordLineEditor.tsx` — the editor's preview pane became
+    *interactive*: tap a letter to put a chord on it, tap a chord to retype or
+    remove it, drag one sideways to re-anchor. Chips are positioned from a
+    measured monospace column width. Edits the same `Line` the textarea does, so
+    the two panes are one model; chords display verbatim (an editor must not
+    respell what was typed).
+  - `src/lib/chordproEdit.ts` (pure, caret-in/caret-out, unit-tested) behind the
+    shortcuts: **Alt+↑/↓** transpose the chord at the caret (leaving any `@beat`
+    suffix), **Alt+←/→** slide it one character, **Tab/Shift+Tab** hop between
+    chords, **Ctrl/⌘+K** insert empty brackets.
+  - Unrecognised symbols are flagged, never rejected (`N.C.` is legitimate).
+- **Tag-beats lane rework**: the single 56px/beat strip now **wraps into rows** of
+  2/4/8 bars with a 5-step zoom, part labels per row, and a **bar _n_ beat _n_**
+  readout for the selected chord — a 60-bar song is scannable on a phone instead
+  of a 13,000px scroll. Drag is row-scoped (clamped to the row's span). The lane
+  deliberately shows one pass per authored part, not the arrangement.
+- Editor wording: the pool is **parts** (matching ChordPro's `{start_of_part}`
+  and reading correctly against the arrangement); report block picker + admin help
+  guides follow.
+- Help: new `chord-grid-parts`, `arrange-a-song`, `space-chords-evenly`; revised
+  `create-a-song`, `tag-beats`.
+
+**Not done (deliberately deferred):** plain-text / Ultimate-Guitar paste import
+(still Phase 9/10) and the lower-effort tagging modes (tap line-starts only,
+correction-mode, loop-and-listen in the review lane, copy timing between
+parts/variants, groove stamps).
+
 ---
 
 ## 5. Conventions (see CLAUDE.md for the full list)
@@ -414,14 +495,16 @@ subset of a future full-notation model (add `duration` later — additive only).
   descriptor (`src/lib/report/types.ts`) was built reuse-aware; a future
   customizable per-song screen view could share it with the Phase-5 performance-
   view registry. Intentionally NOT coupled in Phase 8.
-- Editor affordances: tap-to-place chords (a visual per-event beat picker is now
-  done — see Phase 12's TagBeats fine-tune editor).
+- ~~Editor affordances: tap-to-place chords~~ — done in Phase 15
+  (`ChordLineEditor`); the visual per-event beat picker landed in Phase 12.
 - More performance views (registry already supports them — Phase 5): ~~ticker /
   cross-screen scroll~~ (done, Phase 12 Highway) / fixed-line teleprompter (N
   lines at a time, alignment options) / two-column. ~~auto-scroll that follows
   the beat-timing layer~~ (the Highway does, via the shared transport).
-- ChordPro grid (`{start_of_grid}`/`{sog}`) import bridge → map bars/beats/
-  chords onto the beat-timing layer (independent of strum patterns, Phase 7).
+- ~~ChordPro grid (`{start_of_grid}`/`{sog}`) bridge → map bars/beats/chords onto
+  the beat-timing layer~~ — the authoring half is done (Phase 15
+  `lib/chordGrid.ts`, `Section.grid`). Still open: parsing `{sog}`…`{eog}` on
+  ChordPro *import*, and emitting it on export, so grids round-trip to other apps.
 - Audio playback / click track off the timing layer? (future)
 - Chord-chart auto-generation from a chord symbol when no diagram exists
   (already done for bass/piano via computed shapes; consider for guitar/uke).

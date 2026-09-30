@@ -19,7 +19,7 @@ richer Level 3. Players switch between them while reading or performing.
 1. In the song editor, find the **Difficulty variants** section.
 2. Tap **Add** for a blank version, or **Duplicate** to copy the current one as a
    starting point for a harder arrangement.
-3. Select a version to edit it; its sections below now belong to that version.
+3. Select a version to edit it; its parts below now belong to that version.
 4. Set the version's **Level (1–5)** and an optional **Label** (e.g. *Beginner*).
 5. Tap **Set default** to choose which version opens first. Use **Delete** to
    remove one (a song always keeps at least one).

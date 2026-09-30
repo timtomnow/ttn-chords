@@ -25,8 +25,8 @@ easy to follow.
    turns into **Pause**. Playback always begins from the start of the bar your
    start point is in, so the downbeat lands on beat 1.
 4. Use the toolbar to:
-   - **Jump to…** a section.
-   - **Loop** the section at the start point.
+   - **Jump to…** a part.
+   - **Loop** the part at the start point.
    - Change the **Count-in** (Off, or 1–4 bars) and how many **Bars** are visible.
 5. To change the timing or words, tap **Edit** — see
    [Edit chords and lyrics on the beat grid](/help/edit-on-the-grid).

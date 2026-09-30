@@ -26,7 +26,7 @@ chord charts, images/logos, rhythm boxes, and text across one or more pages.
    **Image / logo**, **Spacer**.
 4. Arrange them — stack blocks in the page column, or place floating blocks freely
    and resize them. Add or remove pages as needed.
-5. For a Song block, pick the song, the difficulty version, which sections to
+5. For a Song block, pick the song, the difficulty version, which parts to
    show, and whether to show charts, rhythm, and chords-over-lyrics.
 
 ## What you'll see

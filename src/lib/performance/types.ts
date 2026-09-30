@@ -11,6 +11,7 @@
 import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { Section, Song, TimeSignature } from '@/types';
+import type { ArrangementSlot } from '@/lib/song';
 import type { ChordClick } from '@/components/chords/ChordLine';
 
 /**
@@ -45,10 +46,19 @@ export type PlaybackState = {
 export type PerformanceViewProps = {
   song: Song;
   /**
-   * Sections of the active difficulty variant (the shell resolves it). Views
-   * render the body from this rather than `song.difficulties` directly.
+   * The POOL of authored sections for the active difficulty variant (the shell
+   * resolves it). This is the EDIT target — a view that writes chords or beats
+   * back (the Highway) mutates this and hands it to `updateDifficultySections`.
+   * For *reading* order use `slots`, which applies the arrangement.
    */
   sections: Section[];
+  /**
+   * The variant's performance order: one entry per occurrence, so a chorus the
+   * arrangement plays four times appears four times here, each with its own
+   * `repeat`/`transpose`. Render the body from this, keyed by `slot.key` (a
+   * section id is not unique across slots).
+   */
+  slots: ArrangementSlot[];
   /** Id of the active difficulty variant — needed by views that write back
    *  (e.g. the Highway's beat editing) so edits land on the right variant. */
   difficultyId?: string;

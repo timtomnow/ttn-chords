@@ -27,7 +27,7 @@ import type { Transport } from '@/lib/performance/types';
 import { saveSettings, useSettings } from '@/db/repo';
 import { DEFAULT_METRONOME, clampTempo } from '@/lib/metronome';
 import { preferFlatsForKey } from '@/lib/music';
-import { getDifficulty, sortedDifficulties } from '@/lib/song';
+import { arrangementOf, getDifficulty, sortedDifficulties } from '@/lib/song';
 import '@/components/performance/views'; // register built-in views
 import type { Song } from '@/types';
 
@@ -147,6 +147,8 @@ export function PerformShell({
   const difficulties = sortedDifficulties(song);
   const activeDiff = getDifficulty(song, activeDifficultyId);
   const sections = activeDiff?.sections ?? [];
+  // Performance order (the arrangement); falls back to the pool order.
+  const slots = arrangementOf(activeDiff);
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-50">
@@ -221,6 +223,7 @@ export function PerformShell({
           <ViewComponent
             song={song}
             sections={sections}
+            slots={slots}
             difficultyId={activeDiff?.id}
             transpose={transpose}
             preferFlats={flats}

@@ -96,6 +96,62 @@ export function transposeChordSymbol(
   return root + p.quality + bass;
 }
 
+// ───────── Key → diatonic chords ─────────
+
+/** Scale degrees of a major key, as semitones from the tonic, with qualities. */
+const MAJOR_DEGREES: { semitones: number; quality: string; numeral: string }[] = [
+  { semitones: 0, quality: '', numeral: 'I' },
+  { semitones: 2, quality: 'm', numeral: 'ii' },
+  { semitones: 4, quality: 'm', numeral: 'iii' },
+  { semitones: 5, quality: '', numeral: 'IV' },
+  { semitones: 7, quality: '', numeral: 'V' },
+  { semitones: 9, quality: 'm', numeral: 'vi' },
+  { semitones: 11, quality: 'dim', numeral: 'vii°' },
+];
+
+/** Natural-minor degrees (relative to the minor tonic). */
+const MINOR_DEGREES: { semitones: number; quality: string; numeral: string }[] = [
+  { semitones: 0, quality: 'm', numeral: 'i' },
+  { semitones: 2, quality: 'dim', numeral: 'ii°' },
+  { semitones: 3, quality: '', numeral: 'III' },
+  { semitones: 5, quality: 'm', numeral: 'iv' },
+  { semitones: 7, quality: 'm', numeral: 'v' },
+  { semitones: 8, quality: '', numeral: 'VI' },
+  { semitones: 10, quality: '', numeral: 'VII' },
+];
+
+export type DiatonicChord = { symbol: string; numeral: string };
+
+/**
+ * The seven diatonic triads of a key, in scale order — the chords a song in that
+ * key is overwhelmingly likely to use. Drives the chord palette in the song
+ * editor so common chords are one tap away instead of typed character by
+ * character (the `[`, `#` and `/` keys are the worst part of a phone keyboard).
+ *
+ * Accepts "G", "Em", "Bb", "F#m". Returns [] for anything it can't read. The
+ * dominant seventh of the V chord is appended as an eighth entry, since it's the
+ * next most likely chord after the triads.
+ */
+export function diatonicChords(key: string | undefined): DiatonicChord[] {
+  if (!key) return [];
+  const trimmed = key.trim();
+  const tonic = parseNote(trimmed);
+  if (tonic === null) return [];
+  // "Em" / "F#min" / "Am" are minor; anything else is treated as major.
+  const isMinor = /^[A-G][#b♯♭]?\s*(m|min|minor)\b/i.test(trimmed);
+  const flats = preferFlatsForKey(trimmed);
+  const degrees = isMinor ? MINOR_DEGREES : MAJOR_DEGREES;
+  const out = degrees.map((d) => ({
+    symbol: noteName(tonic + d.semitones, flats) + d.quality,
+    numeral: d.numeral,
+  }));
+  // The dominant seventh — the one non-triad worth a permanent slot. Its root is
+  // the fifth degree in both modes; a minor key borrows the major quality from
+  // the harmonic minor (A minor → E7, not Em7).
+  out.push({ symbol: `${noteName(tonic + 7, flats)}7`, numeral: 'V7' });
+  return out;
+}
+
 // ───────── Chord tones ─────────
 
 // Intervals (semitones from the root, root included) for common qualities.

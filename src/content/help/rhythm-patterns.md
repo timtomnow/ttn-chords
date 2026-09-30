@@ -2,11 +2,11 @@
 title: Create and attach a strum pattern
 category: Authoring (admin)
 order: 50
-summary: Build a reusable strum/rhythm grid and attach it to a song's sections.
+summary: Build a reusable strum/rhythm grid and attach it to a song's parts.
 ---
 
 A rhythm pattern is a reusable strum grid (down, up, mute, accent, and your own
-symbols) that you can attach to a section so players can see the feel.
+symbols) that you can attach to a part so players can see the feel.
 
 ## Before you start
 
@@ -19,13 +19,13 @@ symbols) that you can attach to a section so players can see the feel.
 3. Set the meter and subdivision, then paint the grid: pick a stroke and tap the
    cells (tap again to clear).
 4. Save the pattern.
-5. To attach it, open a song's editor and choose the pattern in the section's
+5. To attach it, open a song's editor and choose the pattern in the part's
    rhythm menu (or pick **+ New pattern…** to create one inline).
 
 ## What you'll see
 
 The pattern shows as a row of stroke symbols over a beat ruler, beneath the
-section, in the song view and the Scroll performance view. Patterns are reusable
+part, in the song view and the Scroll performance view. Patterns are reusable
 across songs.
 
 ## Related guides
