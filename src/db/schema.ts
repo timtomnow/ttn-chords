@@ -3,6 +3,7 @@ import { newId } from '@/lib/id';
 import type {
   AppSettings,
   ChordDefinition,
+  ChordSound,
   Instrument,
   Photo,
   ReportTemplate,
@@ -13,7 +14,7 @@ import type {
 } from '@/types';
 
 /** Bumped whenever the on-disk shape changes. Written into JSON exports. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export class TtnChordsDB extends Dexie {
   songs!: Table<Song, string>;
@@ -22,6 +23,7 @@ export class TtnChordsDB extends Dexie {
   rhythmSymbols!: Table<RhythmSymbol, string>;
   instruments!: Table<Instrument, string>;
   chordDefinitions!: Table<ChordDefinition, string>;
+  chordSounds!: Table<ChordSound, string>;
   reportTemplates!: Table<ReportTemplate, string>;
   photos!: Table<Photo, string>;
   settings!: Table<AppSettings, string>;
@@ -65,6 +67,11 @@ export class TtnChordsDB extends Dexie {
             delete song.sections;
           });
       });
+    // v4: per-chord sound recordings (Highway play-along). Additive — a new
+    // table that just starts empty; nothing existing changes shape.
+    this.version(4).stores({
+      chordSounds: 'id, chord, createdAt',
+    });
   }
 }
 

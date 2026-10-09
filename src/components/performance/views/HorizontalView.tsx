@@ -2,16 +2,19 @@
 // beneath them) lay out left-to-right on a beat grid. The view owns a playback
 // origin (`playFrom`) and reads elapsed time off the shared metronome transport,
 // so it can: scroll the whole song freely when stopped; set the start point by
-// clicking the ruler; jump to any section; loop a section; count in 0/4/8 beats
-// before motion; and switch into an edit mode that drags the chord onsets around
-// (the same beat-grid editing as the end of a tag-beats session). Needs the
+// clicking the ruler; jump to any section; loop a section; count in 0–4 bars
+// before motion (laid out as real bars on the road, so the bar you're starting
+// on is visibly coming at you rather than announced by a number); sound the
+// chords as well as the click; and switch into an edit mode that drags the chord
+// onsets around (the same beat-grid editing as the end of a tag-beats session).
+// Needs the
 // song's beat-timing layer — if nothing is timed yet it points the user at the
 // play-along beat tagger. Registers itself with the performance-view registry.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, Eraser, Minus, MoveHorizontal, Pencil, Plus, Repeat, Trash2, Type } from 'lucide-react';
-import { saveSettings, updateDifficultySections, useSettings } from '@/db/repo';
+import { saveSettings, updateDifficultySections, useChordSounds, useSettings } from '@/db/repo';
 import { defaultLabelForKind, parseBeat } from '@/lib/chordpro';
 import {
   DEFAULT_TEMPO,
@@ -25,6 +28,9 @@ import {
   type TimelineItem,
 } from '@/lib/timeline';
 import { occurrenceLabel } from '@/lib/song';
+import { buildChordCues, chordHits, type PlayMap } from '@/lib/chordCues';
+import { DEFAULT_CHORD_SOUNDS } from '@/lib/chordAudio';
+import { useChordAudio } from '@/components/tools/useChordAudio';
 import {
   addChordEvent,
   addLyricAnchor,
@@ -80,6 +86,8 @@ const BAR_SIZES = {
   lg: { font: 22, band: 30 },
 } as const;
 const COUNT_IN_BARS = [0, 1, 2, 3, 4];
+/** How far ahead of the playhead chord sounds are queued, in seconds. */
+const CHORD_LOOKAHEAD_S = 0.2;
 const GRIDS = [
   { label: '1/4', den: 4 },
   { label: '1/8', den: 8 },
@@ -111,7 +119,8 @@ function HorizontalView({
   const [grid, setGrid] = useState(16);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
-  const [countNum, setCountNum] = useState(0);
+  // Which beat of the count-in is sounding (0-based); -1 when not counting in.
+  const [countIdx, setCountIdx] = useState(-1);
   const [currentBeatIdx, setCurrentBeatIdx] = useState(0);
   const [drag, setDrag] = useState<{ id: string; absBeat: number } | null>(null);
   // Open inline "type a chord / lyric" input. `beat` is the section-relative
@@ -145,6 +154,21 @@ function HorizontalView({
   const segments = useMemo(() => lyricSegments(timeline.items), [timeline.items]);
   const timed = useMemo(() => hasAnyBeats(song, difficultyId), [song, difficultyId]);
 
+  // ── Chord sounds ──
+  // The view knows what chord is due when, so it owns the scheduling; the engine
+  // just makes the noise, on the transport's own AudioContext.
+  const chordSounds = useChordSounds();
+  const storedChordCfg = settings?.chordSounds;
+  const chordCfg = useMemo(
+    () => ({ ...DEFAULT_CHORD_SOUNDS, ...storedChordCfg }),
+    [storedChordCfg],
+  );
+  const chordEngine = useChordAudio(chordCfg, chordSounds);
+  const cues = useMemo(
+    () => buildChordCues(timeline, transpose, preferFlats),
+    [timeline, transpose, preferFlats],
+  );
+
   const refBarBeats = quarterBeatsPerBar(song.timeSignature ?? defaults.timeSignature);
   // Count-in is authored in whole bars; the transport clock runs in beats, so
   // convert. Whole bars guarantee the downbeat accent lands on beat 1.
@@ -152,6 +176,14 @@ function HorizontalView({
   const beatsVisible = Math.max(1, nBars * refBarBeats);
   const pxPerBeat = width > 0 ? width / beatsVisible : 0;
   const playheadX = width * PLAYHEAD_FRAC;
+  // The lane is padded on the left by the count-in (which gets real estate on
+  // the road, so you watch the target bar come to you instead of reading a
+  // number off an overlay) PLUS the playhead's own offset. Without that second
+  // part `scrollLeft` clamps at 0 near the start of the song and the playhead
+  // stops agreeing with the beat under it. `xOf` maps a song beat to its x on
+  // the lane; `beatFromClientX` is its inverse.
+  const leadPx = playheadX + countIn * pxPerBeat;
+  const xOf = (absBeat: number) => leadPx + absBeat * pxPerBeat;
 
   // The section that contains the play origin — the loop target.
   const loopSpan = useMemo(
@@ -188,6 +220,14 @@ function HorizontalView({
   const currentBeatRef = useRef(0);
   const playingRef = useRef(false);
   const endedRef = useRef(false);
+  // The bar-aligned beat this run actually started from (the snapped `playFrom`).
+  // A ref, not state, so chord scheduling never reads a stale origin on the frame
+  // the snap happens.
+  const originRef = useRef(0);
+  // How far ahead chord sounds have been queued, as a playback position.
+  const chordCursorRef = useRef(-1);
+  // Whether the last frame was still inside the count-in.
+  const countingRef = useRef(false);
 
   // Measure responsively.
   useEffect(() => {
@@ -216,6 +256,7 @@ function HorizontalView({
 
       if (playing && !playingRef.current) {
         endedRef.current = false;
+        chordCursorRef.current = -1;
         // Snap the start back to the top of the bar it sits in (always backwards)
         // so the metronome's downbeat accent lands on beat 1 — never mid-bar.
         let barStart = 0;
@@ -223,39 +264,86 @@ function HorizontalView({
           if (bar.absBeat <= playFrom + 1e-6) barStart = bar.absBeat;
           else break;
         }
+        originRef.current = barStart;
         if (Math.abs(barStart - playFrom) > 1e-6) {
           setPlayFrom(barStart);
           currentBeatRef.current = barStart;
         }
       }
-      if (!playing && playingRef.current) setPlayFrom(clamp(currentBeatRef.current, 0, timeline.totalBeats));
+      if (!playing && playingRef.current) {
+        chordEngine.stopAll();
+        // Pausing leaves the play head where it stopped — but stopping *during*
+        // the count-in never moves the start point: you hadn't got there yet.
+        if (!countingRef.current) {
+          setPlayFrom(clamp(currentBeatRef.current, 0, timeline.totalBeats));
+        }
+      }
+      if (!playing) originRef.current = playFrom;
       playingRef.current = playing;
 
+      // Adopt the transport's context as soon as it has one — it only builds it
+      // on the first tap of Play — so recordings get decoded before the beat
+      // that needs them. Cheap: a no-op unless the context actually changed.
+      if (chordCfg.enabled) chordEngine.setContext(t.getContext());
+
       const pos = t.getPosition();
+      const origin = looping && loopSpan ? loopSpan.startBeat : originRef.current;
       let beat = playFrom;
-      let counting = 0;
+      let counting = -1;
 
       if (playing) {
         if (pos < countIn) {
-          counting = countIn - Math.floor(pos);
-          beat = looping && loopSpan ? loopSpan.startBeat : playFrom;
+          // Roll in from `countIn` beats BEFORE the origin so the count-in bars
+          // scroll past and the start bar arrives at the playhead exactly as the
+          // count ends. `xOf` keeps that negative stretch on-canvas.
+          counting = Math.min(Math.round(countIn) - 1, Math.floor(pos));
+          beat = origin - (countIn - pos);
         } else {
           const elapsed = pos - countIn;
           if (looping && loopSpan && loopSpan.lengthBeats > 0) {
             beat = loopSpan.startBeat + ((elapsed) % loopSpan.lengthBeats);
           } else {
-            beat = playFrom + elapsed;
+            beat = origin + elapsed;
             if (beat >= timeline.totalBeats && !endedRef.current) {
               endedRef.current = true;
               if (t.playing) t.toggle();
             }
           }
         }
-        if (el && pxPerBeat > 0) el.scrollLeft = Math.max(0, beat * pxPerBeat - playheadX);
+        if (el && pxPerBeat > 0) {
+          // xOf(beat) - playheadX, with the lead-in padding cancelling out.
+          el.scrollLeft = Math.max(0, (beat + countIn) * pxPerBeat);
+        }
+
+        // Chord sounds: queue everything falling inside a short lookahead window
+        // so each hit is placed on the audio clock rather than fired by whichever
+        // frame happened to notice it. Tempo changes only affect what hasn't been
+        // queued yet, which is why the window stays short.
+        if (chordCfg.enabled) {
+          const map: PlayMap = {
+            countIn,
+            from: originRef.current,
+            totalBeats: timeline.totalBeats,
+            loop:
+              looping && loopSpan
+                ? { startBeat: loopSpan.startBeat, lengthBeats: loopSpan.lengthBeats }
+                : undefined,
+          };
+          const until = pos + (CHORD_LOOKAHEAD_S * t.tempo) / 60;
+          // Never reach further back than half a beat: if scheduling was off for
+          // a while (chord sounds toggled mid-song), resume from now instead of
+          // firing everything that was missed in one burst.
+          const from = Math.max(chordCursorRef.current, pos - 0.5);
+          for (const hit of chordHits(cues, map, chordCfg.mode, from, until)) {
+            chordEngine.play(hit.symbol, t.timeAtBeat(hit.posBeat), hit.sustain);
+          }
+          chordCursorRef.current = until;
+        }
       }
 
       currentBeatRef.current = beat;
-      setCountNum((p) => (p === counting ? p : counting));
+      countingRef.current = counting >= 0;
+      setCountIdx((p) => (p === counting ? p : counting));
       const bi = Math.floor(beat + 1e-6);
       setCurrentBeatIdx((p) => (p === bi ? p : bi));
 
@@ -272,7 +360,23 @@ function HorizontalView({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [pxPerBeat, playheadX, playFrom, countIn, looping, loopSpan, editMode, timeline]);
+  }, [
+    pxPerBeat,
+    playheadX,
+    playFrom,
+    countIn,
+    looping,
+    loopSpan,
+    editMode,
+    timeline,
+    cues,
+    chordCfg.enabled,
+    chordCfg.mode,
+    chordEngine,
+  ]);
+
+  // Never leave a chord ringing behind the view.
+  useEffect(() => () => chordEngine.stopAll(), [chordEngine]);
 
   function persistBars(n: number) {
     setNBars(n);
@@ -287,7 +391,7 @@ function HorizontalView({
     const el = scrollRef.current;
     if (!el || pxPerBeat <= 0) return null;
     const rect = el.getBoundingClientRect();
-    return (el.scrollLeft + (clientX - rect.left)) / pxPerBeat;
+    return (el.scrollLeft + (clientX - rect.left) - leadPx) / pxPerBeat;
   }
 
   function setStartFromClientX(clientX: number) {
@@ -302,7 +406,7 @@ function HorizontalView({
     setPlayFrom(s.startBeat);
     setSelectedId(null);
     const el = scrollRef.current;
-    if (el && pxPerBeat > 0) el.scrollLeft = Math.max(0, s.startBeat * pxPerBeat - playheadX);
+    if (el && pxPerBeat > 0) el.scrollLeft = Math.max(0, xOf(s.startBeat) - playheadX);
   }
 
   // ── Edit-mode beat editing ──
@@ -388,7 +492,7 @@ function HorizontalView({
     setEditingLyric(null);
     setAdding({
       kind: p.kind,
-      left: abs * pxPerBeat,
+      left: xOf(abs),
       sectionIndex: p.sectionIndex,
       beat: p.beat,
       lineId: p.lineId,
@@ -451,7 +555,7 @@ function HorizontalView({
   function openLyricEdit(item: TimelineItem) {
     setSelectedId(null);
     setAdding(null);
-    setEditingLyric({ id: item.id, left: item.absBeat * pxPerBeat, text: segments.get(item.event.id) ?? '' });
+    setEditingLyric({ id: item.id, left: xOf(item.absBeat), text: segments.get(item.event.id) ?? '' });
   }
   function commitLyricEdit(text: string) {
     if (!editingLyric) return;
@@ -496,11 +600,16 @@ function HorizontalView({
   }
 
   const playing = transport.playing && !editMode;
-  const laneWidth = pxPerBeat > 0 ? timeline.totalBeats * pxPerBeat + width : 0;
+  const laneWidth = pxPerBeat > 0 ? xOf(timeline.totalBeats) + width : 0;
 
   // Bar-number sizing + which bar/beat is current (for the tracking highlight).
   // Plain computations (this is past the early `!timed` return, so no hooks here).
   const barSize = BAR_SIZES[settings?.horizontalBarSize ?? 'sm'];
+  // Where the count-in lane sits: immediately before whatever playback starts
+  // from (the loop head when looping, otherwise the start marker).
+  const countOrigin = looping && loopSpan ? loopSpan.startBeat : playFrom;
+  const countCells = Math.max(0, Math.round(countIn));
+  const beatsPerBarLabel = Math.max(1, Math.round(refBarBeats));
   let currentBarNumber = 0;
   for (const bar of timeline.bars) {
     if (currentBeatIdx + 1e-6 >= bar.absBeat) currentBarNumber = bar.number;
@@ -656,23 +765,30 @@ function HorizontalView({
               } else setStartFromClientX(e.clientX);
             }}
           >
-            {/* Current-beat tracking highlight (accent), at the bar-number band */}
+            {/* Current-beat tracking highlight — the WHOLE column, top to bottom,
+                so the eye tracks one stripe down the road instead of a thin band
+                up at the bar numbers. Chords and lyrics carry their own opaque
+                chips (below) so they stay readable through the wash. */}
             {pxPerBeat > 0 && (
               <div
-                className="pointer-events-none absolute z-[1] rounded-b bg-accent/25"
+                className="pointer-events-none absolute z-[1] bg-accent/20 ring-1 ring-inset ring-accent/40"
                 style={{
-                  left: currentBeatIdx * pxPerBeat,
+                  left: xOf(currentBeatIdx),
                   width: pxPerBeat,
                   top: RULER_H,
-                  height: barSize.band,
+                  bottom: 0,
                 }}
-              />
+              >
+                {/* A denser cap at the bar-number band keeps the beat readable
+                    against the ruler even on a pale accent. */}
+                <div className="w-full bg-accent/30" style={{ height: barSize.band }} />
+              </div>
             )}
 
             {/* Bar grid */}
             {pxPerBeat > 0 &&
               timeline.bars.map((bar) => (
-                <div key={bar.number} className="absolute inset-y-0 z-[2]" style={{ left: bar.absBeat * pxPerBeat }}>
+                <div key={bar.number} className="absolute inset-y-0 z-[2]" style={{ left: xOf(bar.absBeat) }}>
                   <div className="h-full w-px bg-ink-300 dark:bg-ink-700" />
                   <span
                     className={[
@@ -722,9 +838,56 @@ function HorizontalView({
                 </div>
               ))}
 
+            {/* Count-in lane. Drawn ON the road, in the stretch immediately
+                before the start point, so the bar you're counting into is
+                visibly approaching. It masks whatever song content sits under
+                that stretch (you're not playing it yet) and lights one cell per
+                count. */}
+            {pxPerBeat > 0 && countIdx >= 0 && countCells > 0 && (
+              <div
+                className="pointer-events-none absolute z-[3] overflow-hidden rounded-l-lg border-y border-l border-accent/50 bg-ink-100 dark:bg-ink-900"
+                style={{
+                  left: xOf(countOrigin - countIn),
+                  width: countIn * pxPerBeat,
+                  top: RULER_H,
+                  bottom: 0,
+                }}
+              >
+                <span className="absolute left-2 top-1 text-[10px] font-semibold uppercase tracking-wide text-ink-400">
+                  Count-in
+                </span>
+                {Array.from({ length: countCells }, (_, i) => {
+                  const done = i < countIdx;
+                  const active = i === countIdx;
+                  const downbeat = i % beatsPerBarLabel === 0;
+                  return (
+                    <div
+                      key={i}
+                      className={[
+                        'absolute inset-y-0 flex items-center justify-center border-l',
+                        downbeat ? 'border-accent/50' : 'border-ink-300/70 dark:border-ink-700/70',
+                        active ? 'bg-accent/30' : done ? 'bg-accent/10' : '',
+                      ].join(' ')}
+                      style={{ left: i * pxPerBeat, width: pxPerBeat }}
+                    >
+                      <span
+                        className={[
+                          'font-bold tabular-nums leading-none transition-opacity',
+                          active ? 'text-accent opacity-100' : 'text-ink-400 opacity-60',
+                        ].join(' ')}
+                        style={{ fontSize: `${fontScale * (active ? 2.2 : 1.5)}rem` }}
+                      >
+                        {(i % beatsPerBarLabel) + 1}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Start marker */}
             {pxPerBeat > 0 && (
-              <div className="pointer-events-none absolute inset-y-0" style={{ left: playFrom * pxPerBeat }}>
+              <div className="pointer-events-none absolute inset-y-0" style={{ left: xOf(playFrom) }}>
                 <div className="h-full w-0.5 bg-emerald-500/70" />
                 <div className="absolute -left-1.5 h-0 w-0 border-x-[6px] border-t-[8px] border-x-transparent border-t-emerald-500" style={{ top: RULER_H }} />
               </div>
@@ -734,7 +897,7 @@ function HorizontalView({
             {pxPerBeat > 0 &&
               timeline.items.map((item) => {
                 const dispAbs = drag?.id === item.id ? drag.absBeat : item.absBeat;
-                const left = dispAbs * pxPerBeat;
+                const left = xOf(dispAbs);
                 const sym = item.event.chord
                   ? transposeChordSymbol(item.event.chord, transpose + item.transpose, preferFlats)
                   : '·';
@@ -784,7 +947,10 @@ function HorizontalView({
                     {lyric && editingLyric?.id !== item.id && (
                       <div
                         className={[
-                          'absolute whitespace-nowrap text-ink-700 dark:text-ink-300',
+                          // Own opaque chip: the current-beat column washes accent
+                          // over the full height, and words must stay readable
+                          // through it.
+                          'absolute whitespace-nowrap rounded bg-ink-50/90 px-1 text-ink-700 dark:bg-ink-950/90 dark:text-ink-300',
                           editMode ? '' : 'pointer-events-none',
                           editMode && addKind !== 'chord'
                             ? 'cursor-text rounded hover:bg-accent/15'
@@ -865,10 +1031,17 @@ function HorizontalView({
           </div>
         )}
 
-        {/* Count-in overlay */}
-        {countNum > 0 && (
-          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-            <span className="text-8xl font-bold tabular-nums text-accent drop-shadow">{countNum}</span>
+        {/* Count-in badge. The count itself lives on the road (above); this is
+            just a corner readout so the number is legible however narrow the
+            bars are zoomed. */}
+        {countIdx >= 0 && (
+          <div className="pointer-events-none absolute right-3 z-20 flex items-center gap-2 rounded-full bg-accent px-3 py-1.5 text-accent-fg shadow-lg" style={{ top: RULER_H + 8 }}>
+            <span className="text-[10px] font-semibold uppercase tracking-wide opacity-80">
+              Count-in
+            </span>
+            <span className="text-2xl font-bold tabular-nums leading-none">
+              {(countIdx % beatsPerBarLabel) + 1}
+            </span>
           </div>
         )}
       </div>

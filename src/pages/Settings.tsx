@@ -10,6 +10,7 @@ import { InstrumentSettings } from './settings/InstrumentSettings';
 import { RhythmSettings } from './settings/RhythmSettings';
 import { RhythmSymbolSettings } from './settings/RhythmSymbolSettings';
 import { BundleSettings } from './settings/BundleSettings';
+import { ChordSoundSettings } from './settings/ChordSoundSettings';
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'system', label: 'System' },
@@ -171,6 +172,9 @@ export function Settings() {
 
       {/* Instrument & chords */}
       <InstrumentSettings />
+
+      {/* How chords sound when playing along */}
+      <ChordSoundSettings />
 
       {/* Authoring-only library managers */}
       {adminMode && (

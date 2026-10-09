@@ -14,6 +14,7 @@ import { newId } from '@/lib/id';
 import type {
   AppSettings,
   ChordDefinition,
+  ChordSound,
   Instrument,
   Photo,
   ReportTemplate,
@@ -257,6 +258,43 @@ export async function updateReportTemplate(
 
 export async function deleteReportTemplate(id: string): Promise<void> {
   await db.reportTemplates.delete(id);
+}
+
+// ───────── Chord sounds (per-chord recordings; Blobs like photos) ─────────
+//
+// Keyed by the NORMALIZED chord symbol (see `normalizeChordKey` in
+// lib/chordAudio.ts) so one recording of "G" serves every song. Saving a chord
+// that already has a recording replaces it — one sound per chord, always.
+
+export function useChordSounds(): ChordSound[] | undefined {
+  return useLiveQuery(() => db.chordSounds.orderBy('chord').toArray());
+}
+
+/** All recordings keyed by chord, for the audio engine to decode. */
+export function useChordSoundMap(): Map<string, ChordSound> | undefined {
+  const rows = useChordSounds();
+  return rows ? new Map(rows.map((r) => [r.chord, r])) : undefined;
+}
+
+export async function saveChordSound(
+  chord: string,
+  blob: Blob,
+  mime: string,
+  durationMs: number,
+): Promise<string> {
+  const existing = await db.chordSounds.where('chord').equals(chord).first();
+  const t = now();
+  if (existing) {
+    await db.chordSounds.put({ ...existing, blob, mime, durationMs, updatedAt: t });
+    return existing.id;
+  }
+  const id = newId();
+  await db.chordSounds.add({ id, chord, blob, mime, durationMs, createdAt: t, updatedAt: t });
+  return id;
+}
+
+export async function deleteChordSound(id: string): Promise<void> {
+  await db.chordSounds.delete(id);
 }
 
 // ───────── Photos (logos/images; Blobs, base64 only on export) ─────────

@@ -192,16 +192,42 @@ const QUALITY_INTERVALS: Record<string, number[]> = {
 };
 
 /**
+ * A chord symbol spelled out as actual intervals above its root — what you need
+ * to *voice* it (sound it, draw it on a staff), as opposed to `chordTones`,
+ * which collapses the same information into unordered pitch classes.
+ */
+export type ChordSpelling = {
+  rootPc: PitchClass;
+  /** Semitones above the root, ascending; always starts at 0 (the root). */
+  intervals: number[];
+  /** Slash-bass pitch class, when the symbol names one. */
+  bassPc?: PitchClass;
+};
+
+/**
+ * Spell a chord symbol. Falls back to the major triad for an unrecognized
+ * quality (with a recognized root); null if the symbol isn't a chord at all
+ * (e.g. "N.C.").
+ */
+export function chordSpelling(symbol: string): ChordSpelling | null {
+  const p = parseChordSymbol(symbol);
+  if (!p) return null;
+  const intervals = QUALITY_INTERVALS[p.quality] ?? QUALITY_INTERVALS[''];
+  return { rootPc: p.rootPc, intervals, bassPc: p.bassPc };
+}
+
+/**
  * The pitch classes that make up a chord symbol, root first. Falls back to the
  * major triad for an unrecognized quality (with a recognized root). Returns []
  * if the symbol can't be parsed at all.
  */
 export function chordTones(symbol: string): PitchClass[] {
-  const p = parseChordSymbol(symbol);
-  if (!p) return [];
-  const intervals = QUALITY_INTERVALS[p.quality] ?? QUALITY_INTERVALS[''];
-  const tones = intervals.map((i) => mod12(p.rootPc + i));
-  if (p.bassPc !== undefined && !tones.includes(p.bassPc)) tones.unshift(p.bassPc);
+  const spelling = chordSpelling(symbol);
+  if (!spelling) return [];
+  const tones = spelling.intervals.map((i) => mod12(spelling.rootPc + i));
+  if (spelling.bassPc !== undefined && !tones.includes(spelling.bassPc)) {
+    tones.unshift(spelling.bassPc);
+  }
   return tones;
 }
 

@@ -447,6 +447,56 @@ export type MetronomeSettings = {
   flashBeatColor: string;
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+// Chord sounds — the Highway can play the chords, not just the click
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Where a chord's sound comes from: the built-in synth, or your own recordings. */
+export type ChordSoundSource = 'tone' | 'recording';
+
+/** Timbre of the built-in (computer-generated) chord tone. */
+export type ChordSoundTimbre = 'pluck' | 'strings' | 'organ';
+
+/** How much of the chord the built-in tone sounds. */
+export type ChordSoundVoicing = 'root' | 'full';
+
+/**
+ * When a chord sounds across its span (from its own beat up to the next chord):
+ * - `once`   — one hit on the chord's beat, then silence
+ * - `held`   — sounds from its beat and holds until the next chord
+ * - `repeat` — re-struck on every beat until the next chord
+ * A stop chord (`N.C.`) silences whatever is sounding in all three.
+ */
+export type ChordSoundMode = 'once' | 'held' | 'repeat';
+
+export type ChordSoundSettings = {
+  enabled: boolean;
+  source: ChordSoundSource;
+  timbre: ChordSoundTimbre;
+  voicing: ChordSoundVoicing;
+  mode: ChordSoundMode;
+  /** 0–1. */
+  volume: number;
+};
+
+/**
+ * A user recording that stands in for one chord symbol — strum a G once and
+ * every G in every song can play it back. Keyed by the *sounding* (transposed)
+ * symbol, normalized by `normalizeChordKey` in `lib/chordAudio.ts`. The audio
+ * is a Blob in IndexedDB, base64 only on JSON export (same deal as Photo).
+ */
+export type ChordSound = {
+  id: string;
+  /** Normalized chord symbol, e.g. "G", "Am7", "F#m7b5". */
+  chord: string;
+  blob: Blob;
+  mime: string;
+  /** Length in ms, measured at record time (for the list UI). */
+  durationMs: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type TunerSettings = {
   /** Instrument whose tuning drives the string targets. '' = chromatic. */
   instrumentId: string;
@@ -510,5 +560,7 @@ export type AppSettings = {
   metronome?: MetronomeSettings;
   /** Tuner tool preferences (Music Tools). Additive; non-indexed. */
   tuner?: TunerSettings;
+  /** Chord-sound (play-along) preferences for the Highway. Additive; non-indexed. */
+  chordSounds?: ChordSoundSettings;
   updatedAt: number;
 };

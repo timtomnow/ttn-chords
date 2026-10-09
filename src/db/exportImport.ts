@@ -9,6 +9,7 @@ import { newId } from '@/lib/id';
 import type {
   AppSettings,
   ChordDefinition,
+  ChordSound,
   Instrument,
   Photo,
   ReportTemplate,
@@ -39,10 +40,23 @@ type PhotoExport = {
   createdAt: number;
 };
 
+/** Chord-sound recordings travel the same way (audio Blob → base64). */
+type ChordSoundExport = {
+  id: string;
+  chord: string;
+  mime: string;
+  dataBase64: string;
+  durationMs: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type ExportPayload = {
   version: number;
   exportedAt: number;
   photos: PhotoExport[];
+  /** Added in v4. Absent in older backups — readers must tolerate that. */
+  chordSounds: ChordSoundExport[];
   songs: Song[];
   setlists: Setlist[];
   rhythmPatterns: RhythmPattern[];
@@ -94,6 +108,19 @@ export async function exportData(): Promise<ExportPayload> {
     })),
   );
 
+  const rawSounds = await db.chordSounds.toArray();
+  const chordSounds: ChordSoundExport[] = await Promise.all(
+    rawSounds.map(async (c) => ({
+      id: c.id,
+      chord: c.chord,
+      mime: c.mime,
+      dataBase64: await blobToBase64(c.blob),
+      durationMs: c.durationMs,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    })),
+  );
+
   const rows = Object.fromEntries(
     await Promise.all(
       ROW_TABLES.map(async (t) => [t, await db.table(t).toArray()] as const),
@@ -104,6 +131,7 @@ export async function exportData(): Promise<ExportPayload> {
     version: SCHEMA_VERSION,
     exportedAt: Date.now(),
     photos,
+    chordSounds,
     songs: rows.songs as Song[],
     setlists: rows.setlists as Setlist[],
     rhythmPatterns: rows.rhythmPatterns as RhythmPattern[],
@@ -156,13 +184,21 @@ export function parseExportPayload(value: unknown): ExportPayload {
     }
   }
 
+  if (v.chordSounds !== undefined && !Array.isArray(v.chordSounds)) {
+    throw new Error('Field "chordSounds" must be an array.');
+  }
+
   const photos = (v.photos as unknown[]).map((p, i) => requirePhoto(p, i));
+  const chordSounds = (Array.isArray(v.chordSounds) ? v.chordSounds : []).map((c, i) =>
+    requireChordSound(c, i),
+  );
   const rows = (t: RowTable) => (Array.isArray(v[t]) ? (v[t] as unknown[]) : []);
 
   return {
     version: v.version,
     exportedAt: typeof v.exportedAt === 'number' ? v.exportedAt : Date.now(),
     photos,
+    chordSounds,
     songs: rows('songs').map(normalizeSong),
     setlists: rows('setlists') as Setlist[],
     rhythmPatterns: rows('rhythmPatterns') as RhythmPattern[],
@@ -205,6 +241,25 @@ function requirePhoto(p: unknown, idx: number): PhotoExport {
   return { id: o.id, mime: o.mime, dataBase64: o.dataBase64, createdAt: o.createdAt };
 }
 
+function requireChordSound(c: unknown, idx: number): ChordSoundExport {
+  if (!c || typeof c !== 'object') throw new Error(`chordSounds[${idx}] is not an object.`);
+  const o = c as Record<string, unknown>;
+  if (typeof o.id !== 'string' || !o.id) throw new Error(`chordSounds[${idx}].id missing.`);
+  if (typeof o.chord !== 'string' || !o.chord) throw new Error(`chordSounds[${idx}].chord missing.`);
+  if (typeof o.mime !== 'string' || !o.mime) throw new Error(`chordSounds[${idx}].mime missing.`);
+  if (typeof o.dataBase64 !== 'string') throw new Error(`chordSounds[${idx}].dataBase64 missing.`);
+  const createdAt = typeof o.createdAt === 'number' ? o.createdAt : Date.now();
+  return {
+    id: o.id,
+    chord: o.chord,
+    mime: o.mime,
+    dataBase64: o.dataBase64,
+    durationMs: typeof o.durationMs === 'number' ? o.durationMs : 0,
+    createdAt,
+    updatedAt: typeof o.updatedAt === 'number' ? o.updatedAt : createdAt,
+  };
+}
+
 // ───────── Import ─────────
 
 export async function importData(
@@ -221,13 +276,25 @@ export async function importData(
     createdAt: p.createdAt,
   }));
 
-  const allTables = [db.photos, ...ROW_TABLES.map((t) => db.table(t))];
+  const sounds: ChordSound[] = payload.chordSounds.map((c) => ({
+    id: c.id,
+    chord: c.chord,
+    blob: base64ToBlob(c.dataBase64, c.mime),
+    mime: c.mime,
+    durationMs: c.durationMs,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+  }));
+
+  const allTables = [db.photos, db.chordSounds, ...ROW_TABLES.map((t) => db.table(t))];
 
   await db.transaction('rw', allTables, async () => {
     if (mode === 'replace') {
       await Promise.all(allTables.map((t) => t.clear()));
       await db.photos.bulkAdd(photos);
       summary.added.photos = photos.length;
+      if (sounds.length) await db.chordSounds.bulkAdd(sounds);
+      summary.added.chordSounds = sounds.length;
       await Promise.all(
         ROW_TABLES.map(async (t) => {
           const rows = payload[t] as { id: string }[];
@@ -246,6 +313,14 @@ export async function importData(
     if (newPhotos.length) await db.photos.bulkAdd(newPhotos);
     summary.added.photos = newPhotos.length;
     summary.skipped.photos = photos.length - newPhotos.length;
+
+    const existingSoundIds = new Set(
+      (await db.chordSounds.toCollection().primaryKeys()) as string[],
+    );
+    const newSounds = sounds.filter((c) => !existingSoundIds.has(c.id));
+    if (newSounds.length) await db.chordSounds.bulkAdd(newSounds);
+    summary.added.chordSounds = newSounds.length;
+    summary.skipped.chordSounds = sounds.length - newSounds.length;
 
     await Promise.all(
       ROW_TABLES.map(async (t) => {

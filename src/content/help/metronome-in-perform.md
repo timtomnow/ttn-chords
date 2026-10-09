@@ -23,6 +23,8 @@ never have to leave the song to set up a click track.
    settings**, where you can change:
    - **Sound** — on/off, voice, downbeat accent, and volume.
    - **Light** — the on-screen flash shape and colours.
+   - **Chord sounds** — whether the Highway plays the chords too, and how; see
+     [Play the chords, not just the click](/help/chord-sounds).
    - **Highway** — the **Bar number size** (Small, Medium, or Large).
 
 ## What you'll see
@@ -34,3 +36,4 @@ time. The bar-number size affects the [Highway view](/help/highway-view).
 
 - [Use the metronome](/help/use-the-metronome)
 - [Play along with the Highway view](/help/highway-view)
+- [Play the chords, not just the click](/help/chord-sounds)

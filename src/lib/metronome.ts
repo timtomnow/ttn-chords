@@ -110,18 +110,52 @@ export class MetronomeEngine {
     return this.posBeatsBanked + (elapsed * clampTempo(this.cfg.tempo)) / 60;
   }
 
-  start(): void {
-    if (this.running) return;
+  /**
+   * The AudioContext this engine schedules on, or null if it hasn't been built
+   * yet. Exposed so other voices — the Highway's chord sounds — can be scheduled
+   * on the SAME clock as the click instead of drifting against a second context.
+   *
+   * Deliberately does NOT create one. A context constructed outside a user
+   * gesture starts suspended, and on iOS Safari it can't reliably be revived —
+   * which would silence everything on it, the click included. `start()` is the
+   * only caller allowed to build one, and it always runs from a tap.
+   */
+  get audioContext(): AudioContext | null {
+    return this.ctx;
+  }
+
+  /** Build the context if needed. Only ever called from `start()` — see above. */
+  private ensureContext(): AudioContext {
     if (!this.ctx) {
-      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const Ctor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new Ctor();
     }
-    void this.ctx.resume();
+    return this.ctx;
+  }
+
+  /**
+   * The audio-clock time at which a given playback position falls — the inverse
+   * of `getPositionBeats()`, so a caller can schedule a note *exactly* on beat
+   * 12.5 rather than "next time a frame notices". Returns 0 while stopped.
+   * Positions already in the past return past times, which Web Audio treats as
+   * "now" — that's the right behaviour for a late schedule.
+   */
+  timeAtBeat(beat: number): number {
+    if (!this.running || !this.ctx) return 0;
+    return this.posSinceTime + ((beat - this.posBeatsBanked) * 60) / clampTempo(this.cfg.tempo);
+  }
+
+  start(): void {
+    if (this.running) return;
+    this.ensureContext();
+    void this.ctx!.resume();
     this.running = true;
     this.beat = 0;
     this.sub = 0;
     this.queue = [];
-    this.nextTickTime = this.ctx.currentTime + 0.06;
+    this.nextTickTime = this.ctx!.currentTime + 0.06;
     // Position zero == the first audible tick.
     this.posBeatsBanked = 0;
     this.posSinceTime = this.nextTickTime;

@@ -51,6 +51,12 @@ export function useMetronome(config: MetronomeConfig) {
   // so callers can poll it from a rAF loop without re-rendering on every tick.
   const getPosition = useCallback(() => engineRef.current!.getPositionBeats(), []);
 
+  // The audio clock itself, for callers that add their own voices (the Highway's
+  // chord sounds). Null until the engine has been started from a tap: building a
+  // context outside a user gesture is what silences audio on iOS.
+  const getContext = useCallback(() => engineRef.current!.audioContext, []);
+  const timeAtBeat = useCallback((beat: number) => engineRef.current!.timeAtBeat(beat), []);
+
   const toggle = useCallback(() => {
     if (engineRef.current!.running) {
       engineRef.current!.stop();
@@ -62,5 +68,5 @@ export function useMetronome(config: MetronomeConfig) {
     }
   }, []);
 
-  return { playing, pulse, start, stop, toggle, getPosition };
+  return { playing, pulse, start, stop, toggle, getPosition, getContext, timeAtBeat };
 }

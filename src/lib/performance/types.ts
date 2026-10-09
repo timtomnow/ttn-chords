@@ -26,6 +26,15 @@ export type Transport = {
   timeSignature: TimeSignature;
   /** Continuous position in quarter-note beats since play started; 0 when stopped. */
   getPosition: () => number;
+  /**
+   * The AudioContext the click is scheduled on — null until the transport has
+   * been started, since a context built outside a user gesture never sounds on
+   * iOS. A view that adds voices of its own (the Highway's chord sounds)
+   * schedules on THIS context so it shares one clock with the metronome.
+   */
+  getContext: () => AudioContext | null;
+  /** Audio-clock time for a playback position — the inverse of `getPosition`. */
+  timeAtBeat: (beat: number) => number;
   toggle: () => void;
   setTempo: (bpm: number) => void;
 };

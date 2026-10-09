@@ -20,12 +20,14 @@ import {
 import { ChordPopover } from '@/components/chords/ChordPopover';
 import { PerformMetronome } from '@/components/tools/PerformMetronome';
 import { MetronomeSettingsFields } from '@/components/tools/MetronomeSettingsFields';
+import { ChordSoundFields } from '@/components/tools/ChordSoundFields';
 import { useMetronome } from '@/components/tools/useMetronome';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { getView, listViews } from '@/lib/performance/registry';
 import type { Transport } from '@/lib/performance/types';
 import { saveSettings, useSettings } from '@/db/repo';
 import { DEFAULT_METRONOME, clampTempo } from '@/lib/metronome';
+import { DEFAULT_CHORD_SOUNDS } from '@/lib/chordAudio';
 import { preferFlatsForKey } from '@/lib/music';
 import { arrangementOf, getDifficulty, sortedDifficulties } from '@/lib/song';
 import '@/components/performance/views'; // register built-in views
@@ -78,6 +80,7 @@ export function PerformShell({
   // a beat-clock view's scroll. Seeded from the song; tempo nudgeable live.
   const settings = useSettings();
   const prefs = { ...DEFAULT_METRONOME, ...settings?.metronome };
+  const chordPrefs = { ...DEFAULT_CHORD_SOUNDS, ...settings?.chordSounds };
   const [tempo, setTempo] = useState(() => clampTempo(song.tempo ?? prefs.tempo));
   const timeSignature = song.timeSignature ?? { beats: prefs.beatsPerMeasure, unit: 4 };
   const metro = useMetronome({
@@ -126,6 +129,8 @@ export function PerformShell({
     tempo,
     timeSignature,
     getPosition: metro.getPosition,
+    getContext: metro.getContext,
+    timeAtBeat: metro.timeAtBeat,
     toggle: toggleSong,
     setTempo: (bpm) => setTempo(clampTempo(bpm)),
   };
@@ -372,6 +377,19 @@ export function PerformShell({
               value={prefs}
               onChange={(patch) => void saveSettings({ metronome: { ...prefs, ...patch } })}
             />
+
+            <section className="mt-6 space-y-3">
+              <h2 className="label">Chord sounds</h2>
+              <ChordSoundFields
+                value={chordPrefs}
+                onChange={(patch) =>
+                  void saveSettings({ chordSounds: { ...chordPrefs, ...patch } })
+                }
+              />
+              <p className="text-xs text-ink-500 dark:text-ink-400">
+                Record your own sound for a chord in Settings → Chord sounds.
+              </p>
+            </section>
 
             <section className="mt-6 space-y-3">
               <h2 className="label">Highway</h2>
